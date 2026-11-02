@@ -1,10 +1,15 @@
+import asyncio
 import logging
+from unittest.mock import AsyncMock, patch
 
-from homeassistant.core import HomeAssistant, ServiceCall
+import pytest
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import CoreState, HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
-from support import ALARM, advance, at
+from support import ALARM, advance, advance_without_waiting, at, let_loop_run
 
 from custom_components.morning_routine.clocks import GOOGLE_CLOCK, SAMSUNG_CLOCK
 from custom_components.morning_routine.const import DOMAIN, EVENT_STEP_RAN
@@ -500,3 +505,209 @@ async def test_listeners_hear_about_changes_until_removed(hass, entry, phone, st
     await routine.async_set_on(False)
 
     assert heard == [True]
+
+
+# Fix round 1
+
+
+async def test_long_step_doesnt_hold_up_tracker_or_next_step(
+    hass, hass_storage, freezer, entry, phone, labeled_script, add_item, start_routine
+):
+    second = add_item(SECOND_SCRIPT)
+    release = asyncio.Event()
+    started: list[str] = []
+
+    async def hold_first(call: ServiceCall) -> None:
+        started.append(call.data["entity_id"])
+        if call.data["entity_id"] == labeled_script:
+            await release.wait()
+
+    hass.services.async_register("script", "turn_on", hold_first)
+    routine = await start_routine(entry)
+    await configure(routine, [Step(labeled_script, -30), Step(second, -30)])
+    try:
+        await advance_without_waiting(hass, freezer, at(ALARM, minutes=-30))
+        assert started == [labeled_script, second]
+
+        hass.states.async_set(phone.tracker_id, NOT_HOME)
+        await let_loop_run()
+        assert hass_storage[store_key(entry)]["data"]["state"]["last_location"] == NOT_HOME
+        async with asyncio.timeout(5):
+            await routine.async_set_on(False)
+        assert routine.is_on is False
+    finally:
+        release.set()
+    await hass.async_block_till_done()
+
+
+async def test_step_setting_its_own_switch_doesnt_deadlock(
+    hass, freezer, entry, phone, labeled_script, start_routine
+):
+    called: list[str] = []
+    routine = await start_routine(entry)
+
+    async def turn_routine_off(call: ServiceCall) -> None:
+        called.append(call.data["entity_id"])
+        await routine.async_set_on(False)
+
+    hass.services.async_register("script", "turn_on", turn_routine_off)
+    await configure(routine, [Step(labeled_script, -30)])
+
+    # The clock moves first: asyncio.timeout counts the frozen clock, so it can't wrap the move.
+    await advance_without_waiting(hass, freezer, at(ALARM, minutes=-30))
+    async with asyncio.timeout(5):
+        await hass.async_block_till_done()
+
+    assert called == [labeled_script]
+    assert routine.is_on is False
+
+
+async def test_unexpected_exception_records_failure_and_keeps_going(
+    hass, freezer, entry, phone, labeled_script, add_item, start_routine
+):
+    second = add_item(SECOND_SCRIPT)
+    third = add_item("script.third_step")
+    called: list[str] = []
+
+    async def fail_for_first(call: ServiceCall) -> None:
+        called.append(call.data["entity_id"])
+        if call.data["entity_id"] == labeled_script:
+            raise ValueError("not a Home Assistant error")
+
+    hass.services.async_register("script", "turn_on", fail_for_first)
+    events = async_capture_events(hass, EVENT_STEP_RAN)
+    routine = await start_routine(entry)
+    await configure(routine, [Step(labeled_script, -30), Step(second, -30), Step(third, -20)])
+
+    await advance(hass, freezer, at(ALARM, minutes=-30))
+    assert called == [labeled_script, second]
+    await advance(hass, freezer, at(ALARM, minutes=-20))
+
+    assert called == [labeled_script, second, third]
+    assert [(event.data["item"], event.data["result"]) for event in events] == [
+        (labeled_script, "failed"),
+        (second, "started"),
+        (third, "started"),
+    ]
+
+
+async def test_stop_during_a_batch_runs_nothing_more(
+    hass, hass_storage, freezer, entry, phone, labeled_script, add_item, service_calls, start_routine
+):
+    second = add_item(SECOND_SCRIPT)
+    routine = await start_routine(entry)
+    await configure(routine, [Step(labeled_script, -30), Step(second, -30)])
+    save = routine._store.async_save
+    saves = 0
+
+    async def stop_on_second_save(data: dict) -> None:
+        nonlocal saves
+        saves += 1
+        if saves == 2:
+            routine.async_stop()
+        await save(data)
+
+    routine._store.async_save = stop_on_second_save
+
+    await advance(hass, freezer, at(ALARM, minutes=-30))
+
+    assert [call.data["entity_id"] for call in service_calls] == [labeled_script]
+    assert hass_storage[store_key(entry)]["data"]["state"]["alarms"][0]["ran"] == [labeled_script]
+
+
+async def test_setting_changed_while_starting_doesnt_bypass_restart_rule(
+    hass, hass_storage, freezer, entry, phone, labeled_script, service_calls, start_routine
+):
+    first = await start_routine(entry)
+    await configure(first, [Step(labeled_script, -30)])
+    first.async_stop()
+
+    # Six minutes late: the restart rule drops it, an ordinary evaluation would run it.
+    freezer.move_to(at(ALARM, minutes=-24))
+    hass.set_state(CoreState.starting)
+    second = await start_routine(entry)
+    await second.async_set_on(True)
+    await hass.async_block_till_done()
+    assert service_calls == []
+
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+
+    assert service_calls == []
+    assert hass_storage[store_key(entry)]["data"]["state"]["alarms"][0]["dropped"] == [labeled_script]
+
+
+async def test_startup_path_through_started_event(
+    hass, caplog, freezer, entry, phone, labeled_script, service_calls, start_routine
+):
+    first = await start_routine(entry)
+    await configure(first, [Step(labeled_script, -30)])
+    first.async_stop()
+
+    hass.set_state(CoreState.starting)
+    with caplog.at_level(logging.ERROR):
+        second = await start_routine(entry)
+        assert second.current_alarm is not None
+        hass.set_state(CoreState.running)
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+        await hass.async_block_till_done()
+        second.async_stop()
+        await hass.async_block_till_done()
+
+    assert [record for record in caplog.records if record.levelno >= logging.ERROR] == []
+    assert second.current_alarm == ALARM
+
+
+async def test_phone_left_during_downtime_doesnt_start_a_step_at_restart(
+    hass, freezer, entry, phone, labeled_script, service_calls, start_routine
+):
+    first = await start_routine(entry)
+    await configure(first, [Step(labeled_script, -30)])
+    first.async_stop()
+
+    await set_state(hass, phone.tracker_id, NOT_HOME)
+    freezer.move_to(at(ALARM, minutes=-28))
+    await start_routine(entry)
+
+    assert service_calls == []
+
+
+async def test_store_read_error_starts_clean(
+    hass, caplog, freezer, entry, phone, labeled_script, service_calls, start_routine
+):
+    with (
+        caplog.at_level(logging.ERROR),
+        patch.object(Store, "async_load", AsyncMock(side_effect=OSError("disk trouble"))),
+    ):
+        routine = await start_routine(entry)
+
+    assert "can't be read" in caplog.text
+    assert routine.is_on is False
+    assert routine.clock is None
+
+    await configure(routine, [Step(labeled_script, -30)])
+    await advance(hass, freezer, at(ALARM, minutes=-30))
+    assert len(service_calls) == 1
+
+
+async def test_failed_save_still_sets_the_next_timer(
+    hass, freezer, entry, phone, labeled_script, add_item, service_calls, start_routine
+):
+    second = add_item(SECOND_SCRIPT)
+    routine = await start_routine(entry)
+    await configure(routine, [Step(labeled_script, -30), Step(second, -20)])
+
+    # What the timer does when it fires: forget itself, then evaluate. Called directly so the
+    # error comes back to the test instead of being left unretrieved in a task.
+    freezer.move_to(at(ALARM, minutes=-30))
+    routine._cancel_timer()
+    with (
+        patch.object(routine._store, "async_save", AsyncMock(side_effect=OSError("disk trouble"))),
+        pytest.raises(OSError),
+    ):
+        await routine._async_change()
+    assert service_calls == []
+
+    await advance(hass, freezer, at(ALARM, minutes=-20))
+    assert [call.data["entity_id"] for call in service_calls] == [labeled_script, second]

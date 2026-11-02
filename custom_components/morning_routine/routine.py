@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import (
     CALLBACK_TYPE,
     CoreState,
@@ -17,9 +17,9 @@ from homeassistant.core import (
     State,
     callback,
 )
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, entity_registry as er, label_registry as lr
 from homeassistant.helpers.event import async_track_point_in_utc_time, async_track_state_change_event
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -59,7 +59,9 @@ class Routine:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self._hass = hass
         self._entry = entry
-        self._store: Store[dict[str, Any]] = Store(hass, STORE_VERSION, f"{DOMAIN}.{entry.entry_id}")
+        self._store: Store[dict[str, Any]] = Store(
+            hass, STORE_VERSION, f"{DOMAIN}.{entry.entry_id}", atomic_writes=True
+        )
         self._lock = asyncio.Lock()
         self._state = RoutineState()
         self._steps: list[Step] = []
@@ -72,6 +74,7 @@ class Routine:
         self._timer: CALLBACK_TYPE | None = None
         self._no_alarm_timer: CALLBACK_TYPE | None = None
         self._stopped = False
+        self._started = False
 
     @property
     def is_on(self) -> bool:
@@ -130,10 +133,10 @@ class Routine:
             await self._async_begin()
             return
 
-        async def begin(_event: Event) -> None:
+        async def begin(_hass: HomeAssistant) -> None:
             await self._async_begin()
 
-        self._unsubs.append(self._hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, begin))
+        self._unsubs.append(async_at_started(self._hass, begin))
 
     def async_stop(self) -> None:
         self._stopped = True
@@ -167,17 +170,17 @@ class Routine:
         await self._async_change(change)
 
     async def _async_load(self) -> None:
-        data = await self._store.async_load()
-        if data is None:
-            return
         try:
+            data = await self._store.async_load()
+            if data is None:
+                return
             state = rules.state_from_dict(data["state"])
             steps = rules.steps_from_list(data["steps"])
             on = bool(data["is_on"])
             clock = data["clock"]
             reported = set(data["reported_packages"])
-        except (KeyError, IndexError, ValueError, TypeError):
-            logger.error("The saved morning routine file can't be read, so it starts fresh", exc_info=True)
+        except Exception:
+            logger.exception("The saved morning routine file can't be read, so it starts fresh")
             return
         self._state, self._steps, self._on, self._clock, self._reported = state, steps, on, clock, reported
 
@@ -203,11 +206,16 @@ class Routine:
             self._unsubs.append(self._hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, self._on_registry))
             now = dt_util.utcnow()
             self._observe_sensor(self._hass.states.get(sensor_id), now)
-            # The stored location decides here, so a phone that came home during downtime starts nothing.
+            # A phone that left during downtime blocks the restart rule. One that came home doesn't
+            # start anything: the stored location decides until the rule has run.
+            tracker = self._hass.states.get(tracker_id)
+            if tracker is not None and tracker.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN, "home"):
+                self._state.last_location = tracker.state
             due = rules.steps_after_restart(self._state, self._allowed_steps(), self._on, now)
             await self._async_save()
             await self._async_run(due)
-            self._observe_tracker(self._hass.states.get(tracker_id))
+            self._observe_tracker(tracker)
+            self._started = True
             await self._async_evaluate(dt_util.utcnow())
 
     async def _async_change(self, change: Callable[[datetime], None] | None = None) -> None:
@@ -217,48 +225,62 @@ class Routine:
             now = dt_util.utcnow()
             if change is not None:
                 change(now)
+            if not self._started:
+                # The restart rule has to decide first, so the first evaluation is in _async_begin.
+                await self._async_save()
+                self._notify()
+                return
             await self._async_evaluate(now)
 
     async def _async_evaluate(self, now: datetime) -> None:
-        # Asking records the steps that can no longer run, so it comes before saving.
-        due = rules.steps_to_run(self._state, self._allowed_steps(), self._on, now)
-        await self._async_save()
-        await self._async_run(due)
-        self._schedule(dt_util.utcnow())
-        self._notify()
+        try:
+            # Asking records the steps that can no longer run, so it comes before saving.
+            due = rules.steps_to_run(self._state, self._allowed_steps(), self._on, now)
+            await self._async_save()
+            await self._async_run(due)
+        finally:
+            self._schedule(dt_util.utcnow())
+            self._notify()
 
     def _allowed_steps(self) -> list[Step]:
         return [step for step in self._steps if item_is_allowed(self._hass, step.item)]
 
     async def _async_run(self, due: list[tuple[Alarm, Step]]) -> None:
         for alarm, step in due:
+            if self._stopped:
+                return
             # Saved before the call: a crash can lose a run but never repeat one.
             alarm.ran.add(step.item)
             await self._async_save()
-            domain, service = STEP_SERVICES[step.item.split(".", 1)[0]]
-            error = None
-            try:
-                await self._hass.services.async_call(domain, service, {"entity_id": step.item}, blocking=True)
-            except HomeAssistantError as err:
-                logger.error("Step %s failed: %s", step.item, err)
-                error = str(err)
-            result = "failed" if error else "started"
-            self._last_result = {
-                "item": step.item,
+            # The call can take as long as the script or automation does, so it never holds the lock.
+            self._hass.async_create_task(self._async_call_step(step), f"{DOMAIN} step {step.item}")
+
+    async def _async_call_step(self, step: Step) -> None:
+        domain, service = STEP_SERVICES[step.item.split(".", 1)[0]]
+        error = None
+        try:
+            await self._hass.services.async_call(domain, service, {"entity_id": step.item}, blocking=True)
+        except Exception as err:
+            error = str(err) or type(err).__name__
+            logger.error("Step %s failed: %s", step.item, error, exc_info=True)
+        result = "failed" if error else "started"
+        self._last_result = {
+            "item": step.item,
+            "step": step.offset_minutes,
+            "result": result,
+            "error": error,
+            "time": dt_util.utcnow().isoformat(),
+        }
+        self._hass.bus.async_fire(
+            EVENT_STEP_RAN,
+            {
+                "routine": self._entry.entry_id,
                 "step": step.offset_minutes,
+                "item": step.item,
                 "result": result,
-                "error": error,
-                "time": dt_util.utcnow().isoformat(),
-            }
-            self._hass.bus.async_fire(
-                EVENT_STEP_RAN,
-                {
-                    "routine": self._entry.entry_id,
-                    "step": step.offset_minutes,
-                    "item": step.item,
-                    "result": result,
-                },
-            )
+            },
+        )
+        self._notify()
 
     def _schedule(self, now: datetime) -> None:
         self._cancel_timer()

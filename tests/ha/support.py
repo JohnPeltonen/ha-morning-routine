@@ -1,5 +1,6 @@
 """Shared constants and helpers for the Home Assistant tests."""
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -8,8 +9,6 @@ from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 START = datetime(2026, 11, 2, 5, 0, tzinfo=UTC)
 ALARM = START + timedelta(hours=2)
-SENSOR_NAME = "sensor.test_phone_next_alarm"
-TRACKER_NAME = "device_tracker.test_phone"
 
 
 @dataclass(frozen=True)
@@ -28,3 +27,15 @@ async def advance(hass: HomeAssistant, freezer, when: datetime) -> None:
     freezer.move_to(when)
     async_fire_time_changed_exact(hass, when)
     await hass.async_block_till_done()
+
+
+async def advance_without_waiting(hass: HomeAssistant, freezer, when: datetime) -> None:
+    """Like advance, but for tests where a step is held open and block_till_done would wait for it."""
+    freezer.move_to(when)
+    async_fire_time_changed_exact(hass, when)
+    await let_loop_run()
+
+
+async def let_loop_run() -> None:
+    for _ in range(50):
+        await asyncio.sleep(0)
