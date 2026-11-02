@@ -8,6 +8,7 @@ from rules import (
     change_clock,
     observe_entry,
     observe_no_alarm,
+    recheck_current,
     settle,
 )
 
@@ -350,3 +351,69 @@ def test_alarm_seen_as_it_rings_uses_up_the_skip():
     assert not alarm.seen_late
     assert alarm.skipped
     assert not state.skip_next
+
+
+def alarm_followed_with_seconds(now: str = "08:00:00") -> RoutineState:
+    """The seconds check is off and an alarm at 09:00:03 is followed."""
+    state = RoutineState()
+    observe_entry(state, at("09:00:03"), CLOCK, CLOCK, False, at(now))
+    assert state.current is not None
+    return state
+
+
+def test_turning_the_seconds_check_on_cancels_an_entry_it_now_rejects():
+    state = alarm_followed_with_seconds()
+    alarm = state.current
+
+    recheck_current(state, at("09:00:03"), CLOCK, CLOCK, True, at("08:01:00"))
+
+    assert state.current is None
+    assert alarm.cancelled
+    assert state.alarms == [alarm]
+
+
+def test_recheck_leaves_an_entry_that_still_counts():
+    state = alarm_followed_with_seconds()
+    alarm = state.current
+
+    recheck_current(state, at("09:00:03"), CLOCK, CLOCK, False, at("08:01:00"))
+
+    assert state.current is alarm
+    assert not alarm.cancelled
+
+
+def test_recheck_leaves_the_alarm_when_the_entry_is_a_different_time():
+    # The sensor shows an earlier entry. The followed alarm is hidden behind it and must survive.
+    state = alarm_followed_with_seconds()
+    alarm = state.current
+
+    recheck_current(state, at("08:30:03"), CLOCK, CLOCK, True, at("08:01:00"))
+
+    assert state.current is alarm
+    assert not alarm.cancelled
+
+
+def test_recheck_leaves_an_alarm_that_already_went_off():
+    state = alarm_followed_with_seconds()
+    alarm = state.current
+
+    recheck_current(state, at("09:00:03"), CLOCK, CLOCK, True, at("09:00:30"))
+
+    assert state.current is alarm
+    assert alarm.went_off
+
+
+def test_turning_the_seconds_check_off_again_restores_the_alarm_and_its_record():
+    state = alarm_followed_with_seconds()
+    alarm = state.current
+    alarm.ran.add("step")
+    recheck_current(state, at("09:00:03"), CLOCK, CLOCK, True, at("08:01:00"))
+    assert state.current is None
+
+    recheck_current(state, at("09:00:03"), CLOCK, CLOCK, False, at("08:02:00"))
+    observe_entry(state, at("09:00:03"), CLOCK, CLOCK, False, at("08:02:00"))
+
+    assert state.current is alarm
+    assert not alarm.cancelled
+    assert alarm.ran == {"step"}
+    assert state.alarms == [alarm]

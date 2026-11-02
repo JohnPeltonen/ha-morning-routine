@@ -137,6 +137,26 @@ def observe_entry(
     settle(state, now)
 
 
+def recheck_current(
+    state: RoutineState,
+    time: datetime,
+    package: str | None,
+    clock: str | None,
+    require_zero_seconds: bool,
+    now: datetime,
+) -> None:
+    """After a setting changes: stop following the current alarm if its own entry no longer counts.
+
+    observe_entry leaves an entry alone when its time is the current alarm's, even if it is now rejected.
+    """
+    settle(state, now)
+    current = state.current
+    if current is None or current.went_off or time != current.time:
+        return
+    if check_entry(time, package, clock, require_zero_seconds, now) is not None:
+        _cancel_current(state)
+
+
 def observe_no_alarm(state: RoutineState, now: datetime) -> None:
     settle(state, now)
     if state.current is not None and not state.current.went_off:

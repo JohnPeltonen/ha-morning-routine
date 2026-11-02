@@ -166,7 +166,7 @@ class Routine:
         await self._async_change(change)
 
     async def async_reread_sensor(self) -> None:
-        await self._async_change(self._observe_current_sensor)
+        await self._async_change(lambda now: self._observe_current_sensor(now, recheck=True))
 
     async def async_set_steps(self, steps: list[Step]) -> None:
         def change(_now: datetime) -> None:
@@ -336,10 +336,10 @@ class Routine:
         if event.data.get("entity_id") in {step.item for step in self._steps}:
             self._hass.async_create_task(self._async_change())
 
-    def _observe_current_sensor(self, now: datetime) -> None:
-        self._observe_sensor(self._hass.states.get(self._entry.data[CONF_ALARM_SENSOR]), now)
+    def _observe_current_sensor(self, now: datetime, recheck: bool = False) -> None:
+        self._observe_sensor(self._hass.states.get(self._entry.data[CONF_ALARM_SENSOR]), now, recheck)
 
-    def _observe_sensor(self, new_state: State | None, now: datetime) -> None:
+    def _observe_sensor(self, new_state: State | None, now: datetime, recheck: bool = False) -> None:
         if new_state is None or new_state.state == STATE_UNKNOWN:
             return
         if new_state.state == STATE_UNAVAILABLE:
@@ -356,8 +356,13 @@ class Routine:
         package = new_state.attributes.get("Package") or None
         if package is not None:
             self._reported.add(package)
+        entry_time = dt_util.as_utc(time)
+        if recheck:
+            rules.recheck_current(
+                self._state, entry_time, package, self._clock, self._require_zero_seconds, now
+            )
         rules.observe_entry(
-            self._state, dt_util.as_utc(time), package, self._clock, self._require_zero_seconds, now
+            self._state, entry_time, package, self._clock, self._require_zero_seconds, now
         )
 
     def _observe_tracker(self, new_state: State | None) -> None:
