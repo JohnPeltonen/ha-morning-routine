@@ -1,6 +1,6 @@
 # Morning Routine integration: design
 
-Date: 2026-11-01. Status: waiting for the owner's approval. Nothing is built.
+Date: 2026-11-01. Status: approved by the owner with the changes recorded here. Nothing is built.
 
 "Owner" is the person this was built for. "User" is anyone in a household who has a routine, including someone who is not comfortable with technology. Anything marked "Builder's call" is a decision the owner hasn't specifically reviewed.
 
@@ -144,7 +144,7 @@ A time step runs at the alarm time plus an offset. Negative is before the alarm 
 
 - **Seen late.** If the alarm appears after the step's time has passed and the alarm is still ahead, the step runs right away. This handles hidden alarms. If the alarm has already passed, the step is dropped.
 - **Blocked, then cleared.** If a step's time passes while something is blocking it, it runs as soon as the block clears, as long as the alarm is still ahead. The owner chose this over waiting for the next alarm. With a 7:00 alarm and a 6:30 step, any of these at 6:45 runs the step right away:
-  - The routine is turned on, a clock is chosen, or Skip tomorrow is turned off.
+  - The routine is turned on, a clock is chosen, or Skip next alarm is turned off.
   - The step's toggle is turned on.
   - The step is added, or retimed to a time that has already passed.
   - The phone comes home.
@@ -153,7 +153,7 @@ A time step runs at the alarm time plus an offset. Negative is before the alarm 
   - Once the alarm has passed, the step is dropped.
   - A step that already ran for this alarm doesn't run again, even if it's retimed, or removed and added back. A step is matched by the item it runs. Builder's call.
   - The home check still applies at that moment.
-  - Only a real change clears a block. A restart, reload or reconnect doesn't, and neither does Skip tomorrow turning itself off at noon. Builder's call. To tell a real arrival from a restart, the last real location is saved with `Store`.
+  - Only a real change clears a block. A restart, reload or reconnect doesn't. Builder's call. To tell a real arrival from a restart, the last real location is saved with `Store`.
 - **Missed because Home Assistant was down.** If the step's time passed during downtime, it runs if it's less than 5 minutes late and is dropped otherwise. Builder's call. An alarm first seen during startup follows this rule, not the "seen late" rule, so that a restart can't start things.
 - **Times aren't fixed in advance.** If an edit moves the alarm, steps that haven't run move with it.
 
@@ -162,7 +162,7 @@ A time step runs at the alarm time plus an offset. Negative is before the alarm 
 A motion step runs on the next motion from a sensor the user picks, within a window.
 
 - **The window opens** at an offset the user chooses before the alarm. If the alarm is at 9:30 and the offset is 60 minutes, motion at 8:50 starts the step and motion at 3am doesn't.
-- **The window closes** 4 hours after the alarm. Builder's call.
+- **The window closes** 90 minutes after the alarm. The owner chose this.
 - **A sensor already on when the window opens** counts as motion. Builder's call.
 - **If the phone is away when motion happens,** the step doesn't run, and the window stays open in case the person comes home.
 - **If a step is blocked when its window opens** by anything else, such as its toggle being off, it starts watching for motion once the block clears, as long as the window is still open.
@@ -184,9 +184,16 @@ Each step checks for itself, at the moment it would run. If the person leaves af
 
 **The cost:** a phone that dies at home and is then carried out still counts as home. The owner's data shows updates at least about every 30 minutes while home, and 19 departures in 11 days, none before 7:03am.
 
-### Skip tomorrow
+### Skip next alarm
 
-A switch per routine, on the owner's approved card layout. While it's on, no steps run for that phone. It turns itself off at noon the next day, or at noon the same day if it was turned on before 3:00am. Builder's call, taken from the steam integration's design.
+A switch per routine, on the owner's approved card layout. It's tied to an alarm, not to a day or a clock time. The first two rules are the owner's decision. The rest are builder's calls.
+
+- **Turned on before the alarm goes off:** every step that hasn't run for that alarm is cancelled, including steps after the alarm and motion steps.
+- **Turned on after the alarm has gone off:** that alarm's remaining steps carry on, and the skip applies to the next alarm.
+- **After the skipped alarm goes off,** the switch turns itself off. The cancelled steps stay cancelled, and a snooze doesn't bring them back.
+- **Turned off by a person before the alarm goes off:** the steps come back, and any that are overdue run right away. See "Blocked, then cleared" under "Time steps".
+- **If no alarm is known when it's turned on,** such as when the real alarm is hidden, it applies to the next alarm that counts.
+- **If the alarm is cancelled or replaced,** the switch stays on and applies to whichever alarm goes off next.
 
 ### What a step can run
 
@@ -196,7 +203,7 @@ A switch per routine, on the owner's approved card layout. While it's on, no ste
 - **The check runs on the server,** not just in the card. A request naming an item without the label is refused.
 - If an item is later deleted or loses its label, the step stays on the list, doesn't run, and the card says so in plain words. Builder's call.
 - If a step fails, log it, record it in diagnostics, and carry on with the other steps.
-- If the label doesn't exist yet, the card explains that an admin needs to create it. The integration doesn't create it. Builder's call.
+- If the label doesn't exist yet, the card explains that an admin needs to create it. The integration doesn't create it. The owner confirmed this.
 
 ### Each step runs once per alarm
 
@@ -228,7 +235,7 @@ The owner chose this layout from mockups. **Everything is relative to the alarm.
 |                                            |
 |            + Add a step                    |
 +--------------------------------------------+
-| Skip tomorrow                        [off] |
+| Skip next alarm                      [off] |
 | Clock to watch                             |
 | [ Samsung Clock                        v ] |
 +--------------------------------------------+
@@ -248,7 +255,9 @@ The owner chose this layout from mockups. **Everything is relative to the alarm.
 
 **The clock dropdown:**
 
-- It shows plain names, such as "Samsung Clock" and "Google Clock", and offers those two on every phone. It adds any other app that phone has reported, read from the sensor's history, showing the package name if there's no known plain name.
+- It shows plain names, such as "Samsung Clock" and "Google Clock".
+- Google Clock is offered on every phone. Samsung Clock is offered only on a Samsung phone, or on a phone that has reported it. The owner chose this for Samsung Clock.
+- It adds any other app that phone has reported, read from the sensor's history, showing the package name if there's no known plain name.
 - Known non-clock apps, such as Samsung Routines, aren't offered. Builder's call.
 - A routine has one clock. It stays off until a clock is chosen. Builder's call.
 
@@ -263,7 +272,7 @@ The owner's server has a non-admin user account, so this is a real requirement.
 | Add a phone, remove a routine, the :00 advanced setting | Admin | Integration settings |
 | On/off, clock, skip, steps | Anyone logged in | The card |
 
-Integration settings screens are expected to be admin-only, so the card uses the integration's own WebSocket commands, without the admin requirement. Builder: confirm this in Home Assistant's source. Anyone logged in can edit any routine, with no per-person lock. Builder's call for a household.
+Integration settings screens are expected to be admin-only, so the card uses the integration's own WebSocket commands, without the admin requirement. Builder: confirm this in Home Assistant's source. Anyone logged in can edit any routine, with no per-person lock. The owner chose this. If a phone is lost while its owner is travelling, the person at home must still be able to shut that routine off.
 
 ## Setup
 
@@ -276,7 +285,7 @@ Integration settings screens are expected to be admin-only, so the card uses the
 One device per routine. Builder's call on the exact names.
 
 - Switch: routine on/off.
-- Switch: skip tomorrow.
+- Switch: skip next alarm.
 - Select: clock to watch.
 - Sensor, diagnostic: last ignored entry, with its time, package and reason as attributes.
 - Sensor, diagnostic: current alarm, a timestamp. It can be wrong while an alarm is hidden, so the card doesn't use it.
@@ -302,9 +311,11 @@ Both of these are MIT licensed. Ideas and code can be reused with credit.
 
 Each phase gets its own plan and approval.
 
-1. **Rules and settings:** the repo tooling, the alarm rules with their tests, setup, entities, and running time steps with the home check. Motion steps can follow in this phase if there's room. Steps are set by test code or a temporary service until the card exists.
-2. **The card:** the WebSocket commands, the card, and its registration.
-3. **Live test and release:** install on the owner's server, test with a harmless script, then publish. Installing needs a restart, so ask the owner first, take a backup, and coordinate with any other Claude session working on that server. The owner does all pushing.
+The owner wants one routine running at home while the owner is away for a few days, and intends to adjust it through use. So the first phase ends with a real install, before the card exists.
+
+1. **Rules, settings and first install:** the repo tooling, the alarm rules with their tests, setup, entities, and running time steps with the home check. Steps are set by an admin through a temporary service until the card exists. The routine switch and the skip switch are ordinary entities, so a non-admin user can use them from a dashboard. Install on the owner's server and test with a harmless script before any real one. Installing needs a restart, so ask the owner first, take a backup, and coordinate with any other Claude session working on that server.
+2. **The card and motion steps:** the WebSocket commands, the card and its registration, and motion steps. The owner's house has no motion sensor that works while people are home, so motion steps wait until now.
+3. **Release:** check the card on a real phone, update the README and publish. The owner does all pushing.
 
 **Not part of this repo:** the owner's scripts, the label on them, placing the card on the owner's dashboard, and a kitchen motion sensor that works while people are home. The owner's Blink cameras don't do this. Motion steps can't work in the owner's kitchen until there is one.
 
