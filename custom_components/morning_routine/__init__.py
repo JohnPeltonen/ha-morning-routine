@@ -1,6 +1,5 @@
 """Morning routines that run around a phone's alarm."""
 
-import logging
 from typing import Any
 
 import probatio
@@ -15,8 +14,6 @@ from homeassistant.helpers.typing import ConfigType
 from .const import ATTR_CONFIG_ENTRY_ID, ATTR_STEPS, DOMAIN, MAX_OFFSET_MINUTES, SERVICE_SET_STEPS
 from .routine import Routine, item_is_allowed, routine_store
 from .rules import Step
-
-logger = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
