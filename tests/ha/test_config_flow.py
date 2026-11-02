@@ -8,6 +8,7 @@ from homeassistant.helpers.translation import async_get_translations
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from support import Phone
 
+from custom_components.morning_routine.config_flow import find_tracker
 from custom_components.morning_routine.const import (
     CONF_ALARM_SENSOR,
     CONF_DEVICE_ID,
@@ -21,10 +22,27 @@ NO_PHONES = "component.morning_routine.config.abort.no_phones"
 
 
 @pytest.fixture(autouse=True)
-def setup_entry_succeeds():
-    """These tests are about the screens. Setting up the entry itself is tested with the entities."""
+def setup_entry_succeeds(request):
+    """These tests are about the screens. Setting up the entry itself is tested with the entities.
+
+    A test that asks for `loaded` runs against the real setup instead.
+    """
+    if "loaded" in request.fixturenames:
+        yield
+        return
     with patch("custom_components.morning_routine.async_setup_entry", new=AsyncMock(return_value=True), create=True):
         yield
+
+
+def add_decoy_device(hass, name: str, platform: str, unique_id: str) -> str:
+    """A device of its own whose only sensor isn't a mobile_app Next alarm sensor."""
+    mobile_app = MockConfigEntry(domain="mobile_app", title=name)
+    mobile_app.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=mobile_app.entry_id, identifiers={("mobile_app", unique_id)}, name=name
+    )
+    er.async_get(hass).async_get_or_create("sensor", platform, unique_id, config_entry=mobile_app, device_id=device.id)
+    return device.id
 
 
 def add_second_phone(hass, name: str = "Spare Phone") -> Phone:
@@ -61,15 +79,16 @@ async def translation(hass, key: str) -> str:
 
 async def test_lists_phones_with_the_sensor(hass, phone):
     other = add_second_phone(hass)
-    # A phone from another integration, or a mobile_app sensor of another type, isn't a phone to follow.
-    registry = er.async_get(hass)
-    registry.async_get_or_create("sensor", "mobile_app", "test-phone-id_battery_level", device_id=phone.device_id)
-    registry.async_get_or_create("sensor", "other", "x_next_alarm", device_id=phone.device_id)
+    # Neither of these is a phone to follow: a mobile_app sensor of another type, and a sensor from another integration.
+    battery_only = add_decoy_device(hass, "Battery Only", "mobile_app", "battery-only_battery_level")
+    other_integration = add_decoy_device(hass, "Other Integration", "other", "other-integration_next_alarm")
 
     result = await start(hass)
 
     assert (result["type"], result["step_id"]) == (FlowResultType.FORM, "user")
     assert sorted(offered(result)) == sorted([phone.device_id, other.device_id])
+    assert battery_only not in offered(result)
+    assert other_integration not in offered(result)
     labels = {o["value"]: o["label"] for o in next(iter(result["data_schema"].schema.values())).config["options"]}
     assert labels[phone.device_id] == "Test Phone"
     hass.config_entries.flow.async_abort(result["flow_id"])
@@ -147,6 +166,28 @@ async def test_phone_without_a_tracker_shows_an_error(hass, phone):
     assert (result["step_id"], result["errors"]) == ("user", {"base": "no_tracker"})
     assert hass.config_entries.async_entries(DOMAIN) == []
     hass.config_entries.flow.async_abort(result["flow_id"])
+
+
+async def test_sensor_turned_off_while_the_form_is_open_shows_an_error(hass, phone):
+    other = add_second_phone(hass)
+    result = await start(hass)
+    er.async_get(hass).async_update_entity(phone.sensor_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION)
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_DEVICE_ID: phone.device_id})
+
+    assert result["type"] is FlowResultType.FORM
+    assert (result["step_id"], result["errors"]) == ("user", {"base": "phone_gone"})
+    assert offered(result) == [other.device_id]
+    assert hass.config_entries.async_entries(DOMAIN) == []
+    hass.config_entries.flow.async_abort(result["flow_id"])
+
+
+async def test_find_tracker_ignores_a_tracker_from_another_integration(hass):
+    spare = add_second_phone(hass)
+    registry = er.async_get(hass)
+    registry.async_remove(spare.tracker_id)
+    registry.async_get_or_create("device_tracker", "other", "spare-other", device_id=spare.device_id)
+    assert find_tracker(hass, spare.device_id) is None
 
 
 async def test_no_phones_aborts_with_instructions(hass):

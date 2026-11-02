@@ -276,7 +276,7 @@ Integration settings screens are expected to be admin-only, so the card uses the
 
 ## Setup
 
-- Config flow: one config entry per phone. It lists phones with a next-alarm sensor from the `mobile_app` integration. A phone with the sensor turned off is listed with instructions for turning it on, and for making sure the Allow list is off.
+- Config flow: one config entry per phone. It lists phones with a next-alarm sensor from the `mobile_app` integration. A phone with the sensor turned off isn't listed. The instructions for turning the sensor on, and for making sure the Allow list is off, are in the phone step's description, and in the message shown when no phone is found.
 - The routine's name comes from the `person` linked to that phone's tracker, or the phone's name if there isn't one. Builder's call.
 - The integration registers the card itself, so nobody has to add a dashboard resource by hand. Builder: confirm the current way to do this for version 2026.10.
 

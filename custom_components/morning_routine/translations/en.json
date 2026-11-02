@@ -10,7 +10,8 @@
       }
     },
     "error": {
-      "no_tracker": "This phone has no location entity. In the Home Assistant Android app, turn on location sharing, then try again."
+      "no_tracker": "This phone's location entity is turned off or missing in Home Assistant. Turn it back on under Settings, Devices & services, Entities. Or remove the phone and add it again in the Home Assistant Android app.",
+      "phone_gone": "That phone's Next alarm sensor was turned off. Turn it back on in the Home Assistant Android app, then choose the phone again."
     },
     "abort": {
       "already_configured": "This phone already has a morning routine.",

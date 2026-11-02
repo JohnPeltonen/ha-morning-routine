@@ -1,6 +1,5 @@
 """Setup screens: choose a phone. The options screen has the :00 seconds setting."""
 
-import logging
 from typing import Any
 
 import probatio
@@ -10,8 +9,6 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.selector import SelectOptionDict, SelectSelector, SelectSelectorConfig
 
 from .const import CONF_ALARM_SENSOR, CONF_DEVICE_ID, CONF_REQUIRE_ZERO_SECONDS, CONF_TRACKER, DOMAIN
-
-logger = logging.getLogger(__name__)
 
 OPTIONS_SCHEMA = probatio.Schema({probatio.Required(CONF_REQUIRE_ZERO_SECONDS, default=True): bool})
 
@@ -66,8 +63,10 @@ class MorningRoutineConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             device_id = user_input[CONF_DEVICE_ID]
-            tracker = find_tracker(self.hass, device_id)
-            if tracker is None:
+            if device_id not in sensors:
+                # The sensor was turned off while the form was open.
+                errors["base"] = "phone_gone"
+            elif (tracker := find_tracker(self.hass, device_id)) is None:
                 errors["base"] = "no_tracker"
             else:
                 await self.async_set_unique_id(device_id)
