@@ -50,7 +50,7 @@ data:
       enabled: false
 ```
 
-- `offset_minutes` is the time from the alarm, from -720 to 720. A negative number is before the alarm.
+- `offset_minutes` is the time from the alarm, from -720 to 60. A negative number is before the alarm.
 - `enabled` is optional and defaults to true.
 - The call replaces all the steps of that routine. If any step is refused, nothing changes.
 
@@ -60,15 +60,21 @@ Each step runs once per alarm.
 
 - **Home only.** A step runs only when the phone's location is exactly `home`. If the phone briefly reports `unavailable` or `unknown`, the last real location is used. A zone drawn on your property, such as a yard, counts as away and blocks steps.
 - **Alarms only.** The sensor also reports things that aren't alarms. The integration follows only the chosen clock, and only entries set to a whole minute. An admin can turn off the whole-minute check under the integration's Configure button.
-- **Catching up.** If a step's time passes while it is blocked, it runs as soon as the block clears, as long as the alarm is still ahead. This means **turning something on can start a step right away**. That includes the routine switch, Skip next alarm, the clock picker, coming home, or setting steps.
-- **After the alarm.** There is no catching up once the alarm has gone off. A step more than 10 seconds late at that point is dropped, and so is every step of an alarm first seen after its time.
-- **Restarts.** After a restart, a step runs only if it is less than 5 minutes late and the phone was home before the restart and still is. Otherwise it is dropped.
+- **Catching up.** If a step's time passes while it is blocked, it runs as soon as the block clears, as long as the alarm is still ahead. This means **a change can start a step right away**: turning the routine on, turning Skip next alarm off, choosing a clock, coming home, or setting steps.
+- **After the alarm.** There is no catching up once the alarm has gone off. A step more than 10 seconds late at that point is dropped. An alarm first seen more than 5 seconds after its time runs no steps.
+- **Snoozes.** An entry up to 20 minutes after an alarm counts as the same alarm, so nothing runs again. A 7:00 with a 7:10 backup runs one routine, and a 7:00 with a 7:30 backup runs two.
+- **Restarts.** A step that came due while Home Assistant was restarting runs only if it is less than 5 minutes late, the phone was home before the restart, and the phone doesn't now report somewhere else. Otherwise it is dropped.
+- **Turning it off.** Turning the routine off stops steps that haven't started. It doesn't undo one that has.
 
 ## Known limits
 
 - **Hidden alarms.** The sensor shows only the soonest entry. An alarm cancelled while hidden behind another entry can't be detected, so its steps may still run.
 - **A late start for a hidden alarm.** An alarm hidden behind another entry appears only when that entry passes, so its steps may start late.
 - **Sensor outage near the alarm.** If the sensor goes `unavailable` less than 60 seconds before the alarm, the alarm is treated as having gone off, not as cancelled.
+- **A phone that dies at home.** It still counts as home, because its last real location was home.
+- **Scripts with input fields.** These aren't supported as steps, because a step passes no values.
+- **Moving an alarm earlier.** That counts as a different alarm, so a step that already ran can run again.
+- **Renaming entities.** Renaming the phone's next alarm sensor or location entity breaks the routine. Remove the routine and add it again.
 - **Shared scripts.** A script in `single` mode that is already running ignores a new start, but the step is still recorded as `started`.
 - **Automation results.** An automation step reports `started` only when the automation finishes, so results can arrive late and out of order.
 

@@ -45,10 +45,10 @@ async def test_set_steps_accepts_the_edges_of_the_offset_range(hass, loaded, lab
     await set_steps(
         hass,
         loaded.entry_id,
-        [{"item": labeled_script, "offset_minutes": -720}, {"item": other, "offset_minutes": 720}],
+        [{"item": labeled_script, "offset_minutes": -720}, {"item": other, "offset_minutes": 60}],
     )
 
-    assert [step.offset_minutes for step in loaded.runtime_data.steps] == [-720, 720]
+    assert [step.offset_minutes for step in loaded.runtime_data.steps] == [-720, 60]
 
 
 async def test_set_steps_with_an_empty_list_clears_the_steps(hass, loaded, labeled_script):
@@ -95,7 +95,7 @@ async def test_set_steps_refuses_duplicate_items(hass, loaded, labeled_script):
     assert loaded.runtime_data.steps == [Step(labeled_script, -30, True)]
 
 
-@pytest.mark.parametrize("offset", [721, -721, "5", 1.5, True, None])
+@pytest.mark.parametrize("offset", [61, 720, -721, "5", 1.5, True, None])
 async def test_set_steps_refuses_offset_out_of_range(hass, loaded, labeled_script, offset):
     await set_steps(hass, loaded.entry_id, [{"item": labeled_script, "offset_minutes": -30}])
 

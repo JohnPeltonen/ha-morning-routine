@@ -12,4 +12,6 @@ SERVICE_SET_STEPS = "set_steps"
 ALLOWED_DOMAINS = ("script", "scene", "automation")
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 ATTR_STEPS = "steps"
-MAX_OFFSET_MINUTES = 720
+MIN_OFFSET_MINUTES = -720
+# An alarm's record is kept for 90 minutes after it, and a later step would never run.
+MAX_OFFSET_MINUTES = 60

@@ -77,7 +77,7 @@
       "message": "{item} is listed twice. Each item can be a step once."
     },
     "offset_out_of_range": {
-      "message": "The offset for {item} must be a whole number of minutes from -{limit} to {limit}."
+      "message": "The offset for {item} must be a whole number of minutes from {low} to {high}."
     }
   },
   "services": {
@@ -91,7 +91,7 @@
         },
         "steps": {
           "name": "Steps",
-          "description": "A list. Each step has an item (a script, scene or automation with the label \"morning routine\"), offset_minutes (-720 to 720, negative is before the alarm), and optionally enabled (true or false, default true)."
+          "description": "A list. Each step has an item (a script, scene or automation with the label \"morning routine\"), offset_minutes (-720 to 60, negative is before the alarm), and optionally enabled (true or false, default true)."
         }
       }
     }

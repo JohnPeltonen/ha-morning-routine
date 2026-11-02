@@ -11,7 +11,14 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from custom_components.morning_routine.const import ATTR_CONFIG_ENTRY_ID, ATTR_STEPS, DOMAIN, MAX_OFFSET_MINUTES, SERVICE_SET_STEPS
+from custom_components.morning_routine.const import (
+    ATTR_CONFIG_ENTRY_ID,
+    ATTR_STEPS,
+    DOMAIN,
+    MAX_OFFSET_MINUTES,
+    MIN_OFFSET_MINUTES,
+    SERVICE_SET_STEPS,
+)
 from custom_components.morning_routine.routine import Routine, item_is_allowed, routine_store
 from custom_components.morning_routine.rules import Step
 
@@ -45,8 +52,10 @@ def parse_steps(hass: HomeAssistant, raw: Any) -> list[Step]:
             raise _refuse("item_not_allowed", item=name)
         if name in seen:
             raise _refuse("duplicate_item", item=name)
-        if type(offset) is not int or abs(offset) > MAX_OFFSET_MINUTES:
-            raise _refuse("offset_out_of_range", item=name, limit=str(MAX_OFFSET_MINUTES))
+        if type(offset) is not int or not MIN_OFFSET_MINUTES <= offset <= MAX_OFFSET_MINUTES:
+            raise _refuse(
+                "offset_out_of_range", item=name, low=str(MIN_OFFSET_MINUTES), high=str(MAX_OFFSET_MINUTES)
+            )
         seen.add(name)
         steps.append(Step(name, offset, enabled))
     return steps

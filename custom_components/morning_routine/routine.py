@@ -246,7 +246,8 @@ class Routine:
             await self._async_save()
             await self._async_run(due)
         finally:
-            self._schedule(dt_util.utcnow())
+            # The same now as the question above, so a step due during the saves still gets a timer.
+            self._schedule(now)
             self._notify()
 
     def _allowed_steps(self) -> list[Step]:
