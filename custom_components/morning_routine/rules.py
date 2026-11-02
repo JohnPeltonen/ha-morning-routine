@@ -233,3 +233,81 @@ def next_wakeup(state: RoutineState, steps: list[Step], now: datetime) -> dateti
 def set_skip(state: RoutineState, on: bool, now: datetime) -> None:
     settle(state, now)
     state.skip_next = on
+
+
+def _alarm_to_dict(alarm: Alarm) -> dict:
+    return {
+        "time": alarm.time.isoformat(),
+        "latest": alarm.latest.isoformat(),
+        "went_off": alarm.went_off,
+        "cancelled": alarm.cancelled,
+        "skipped": alarm.skipped,
+        "seen_late": alarm.seen_late,
+        "ran": sorted(alarm.ran),
+        "dropped": sorted(alarm.dropped),
+    }
+
+
+def _alarm_from_dict(data: dict) -> Alarm:
+    return Alarm(
+        time=datetime.fromisoformat(data["time"]),
+        latest=datetime.fromisoformat(data["latest"]),
+        went_off=data["went_off"],
+        cancelled=data["cancelled"],
+        skipped=data["skipped"],
+        seen_late=data["seen_late"],
+        ran=set(data["ran"]),
+        dropped=set(data["dropped"]),
+    )
+
+
+def state_to_dict(state: RoutineState) -> dict:
+    current = None
+    if state.current is not None:
+        current = next(i for i, alarm in enumerate(state.alarms) if alarm is state.current)
+    ignored = state.last_ignored
+    return {
+        "alarms": [_alarm_to_dict(alarm) for alarm in state.alarms],
+        "current": current,
+        "skip_next": state.skip_next,
+        "last_location": state.last_location,
+        "last_ignored": None
+        if ignored is None
+        else {
+            "time": ignored.time.isoformat(),
+            "package": ignored.package,
+            "reason": ignored.reason.value,
+        },
+    }
+
+
+def state_from_dict(data: dict) -> RoutineState:
+    alarms = [_alarm_from_dict(item) for item in data["alarms"]]
+    ignored = data["last_ignored"]
+    return RoutineState(
+        alarms=alarms,
+        current=None if data["current"] is None else alarms[data["current"]],
+        skip_next=data["skip_next"],
+        last_location=data["last_location"],
+        last_ignored=None
+        if ignored is None
+        else IgnoredEntry(
+            time=datetime.fromisoformat(ignored["time"]),
+            package=ignored["package"],
+            reason=IgnoreReason(ignored["reason"]),
+        ),
+    )
+
+
+def steps_to_list(steps: list[Step]) -> list[dict]:
+    return [
+        {"item": step.item, "offset_minutes": step.offset_minutes, "enabled": step.enabled}
+        for step in steps
+    ]
+
+
+def steps_from_list(data: list[dict]) -> list[Step]:
+    return [
+        Step(item=entry["item"], offset_minutes=entry["offset_minutes"], enabled=entry["enabled"])
+        for entry in data
+    ]
