@@ -1,7 +1,9 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from homeassistant.components.select import DATA_COMPONENT as SELECT_DATA
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Context
 from homeassistant.exceptions import ServiceValidationError
@@ -153,16 +155,44 @@ async def test_turning_off_seconds_check_picks_up_alarm_on_the_sensor(hass, phon
     assert hass.states.get(sensor).state == off_the_minute.isoformat()
 
 
+async def test_turning_on_seconds_check_stops_following_a_rejected_entry(
+    hass, freezer, phone, loaded, labeled_script, service_calls
+):
+    sensor = entity_id(hass, loaded, "sensor", "current_alarm")
+    off_the_minute = ALARM + timedelta(seconds=3)
+    hass.config_entries.async_update_entry(loaded, options={CONF_REQUIRE_ZERO_SECONDS: False})
+    hass.states.async_set(phone.sensor_id, off_the_minute.isoformat(), {"Package": GOOGLE_CLOCK})
+    await choose_google(hass, loaded)
+    await loaded.runtime_data.async_set_steps([Step(labeled_script, -30)])
+    await loaded.runtime_data.async_set_on(True)
+    assert hass.states.get(sensor).state == off_the_minute.isoformat()
+
+    hass.config_entries.async_update_entry(loaded, options={CONF_REQUIRE_ZERO_SECONDS: True})
+    await hass.async_block_till_done()
+    assert hass.states.get(sensor).state == STATE_UNKNOWN
+    await advance(hass, freezer, at(off_the_minute, minutes=-30))
+
+    assert service_calls == []
+
+
 async def test_non_admin_can_use_the_switches(hass, loaded, household_member):
     context = Context(user_id=household_member.id)
     routine = entity_id(hass, loaded, "switch", "routine")
     skip = entity_id(hass, loaded, "switch", "skip_next_alarm")
+    clock = entity_id(hass, loaded, "select", "clock")
 
     await call(hass, "switch", "turn_on", routine, context)
-    await call(hass, "switch", "turn_on", skip, context)
-
     assert hass.states.get(routine).state == STATE_ON
+    await call(hass, "switch", "turn_off", routine, context)
+    assert hass.states.get(routine).state == STATE_OFF
+
+    await call(hass, "switch", "turn_on", skip, context)
     assert hass.states.get(skip).state == STATE_ON
+    await call(hass, "switch", "turn_off", skip, context)
+    assert hass.states.get(skip).state == STATE_OFF
+
+    await call(hass, "select", "select_option", clock, context, option=GOOGLE_NAME)
+    assert hass.states.get(clock).state == GOOGLE_NAME
 
 
 async def test_diagnostics_include_the_last_result(
@@ -192,6 +222,27 @@ async def test_diagnostics_include_the_last_result(
     assert data["state"]["alarms"][0]["ran"] == [labeled_script]
 
 
+async def test_diagnostics_show_home_or_not_home_but_never_a_zone_name(
+    hass, hass_client, hass_admin_user, phone, loaded
+):
+    assert await async_setup_component(hass, "diagnostics", {})
+    refresh_token = await hass.auth.async_create_refresh_token(
+        hass_admin_user, "https://example.test", access_token_expiration=timedelta(days=1)
+    )
+    client = await hass_client(hass.auth.async_create_access_token(refresh_token))
+    url = f"/api/diagnostics/config_entry/{loaded.entry_id}"
+
+    async def location() -> str | None:
+        return (await (await client.get(url)).json())["data"]["state"]["last_location"]
+
+    assert await location() == "home"
+
+    hass.states.async_set(phone.tracker_id, "Some Faraway Place")
+    await hass.async_block_till_done()
+    assert await location() == "not_home"
+    assert "Faraway" not in await (await client.get(url)).text()
+
+
 async def test_unload_cancels_timers_and_listeners(hass, loaded, labeled_script):
     routine = loaded.runtime_data
     await choose_google(hass, loaded)
@@ -219,3 +270,15 @@ async def test_removing_the_entry_removes_its_store(hass, hass_storage, loaded):
     await hass.async_block_till_done()
 
     assert key not in hass_storage
+
+
+async def test_failed_platform_setup_stops_the_routine(hass, entry):
+    with patch.object(hass.config_entries, "async_forward_entry_setups", side_effect=RuntimeError("boom")):
+        assert not await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    routine = entry.runtime_data
+    assert routine._stopped
+    assert routine._unsubs == []
+    assert routine._timer is None
