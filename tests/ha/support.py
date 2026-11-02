@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import async_fire_time_changed_exact
 
 START = datetime(2026, 11, 2, 5, 0, tzinfo=UTC)
@@ -16,6 +17,12 @@ class Phone:
     device_id: str
     sensor_id: str
     tracker_id: str
+
+
+def entity_id(hass: HomeAssistant, entry, platform: str, key: str) -> str:
+    found = er.async_get(hass).async_get_entity_id(platform, "morning_routine", f"{entry.entry_id}_{key}")
+    assert found is not None, f"no {platform} entity with key {key}"
+    return found
 
 
 def at(time: datetime, **offset: float) -> datetime:

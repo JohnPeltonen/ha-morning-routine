@@ -1,0 +1,11 @@
+set_steps:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: morning_routine
+    steps:
+      required: true
+      selector:
+        object: {}

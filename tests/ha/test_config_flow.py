@@ -200,7 +200,6 @@ async def test_no_phones_aborts_with_instructions(hass):
 
 
 async def test_options_turn_off_the_seconds_check(hass, loaded):
-    # `loaded` comes with the entities task. Until then this test errors on the missing fixture.
     entry = hass.config_entries.async_entries(DOMAIN)[0]
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert (result["type"], result["step_id"]) == (FlowResultType.FORM, "init")

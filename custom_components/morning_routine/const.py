@@ -10,3 +10,6 @@ EVENT_STEP_RAN = "morning_routine_step_ran"
 SERVICE_SET_STEPS = "set_steps"
 
 ALLOWED_DOMAINS = ("script", "scene", "automation")
+ATTR_CONFIG_ENTRY_ID = "config_entry_id"
+ATTR_STEPS = "steps"
+MAX_OFFSET_MINUTES = 720

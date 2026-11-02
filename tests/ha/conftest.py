@@ -1,6 +1,9 @@
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 
 import pytest
+from homeassistant.auth.const import GROUP_ID_USER
+from homeassistant.auth.models import User
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import device_registry as dr, entity_registry as er, label_registry as lr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -69,6 +72,24 @@ def entry(hass: HomeAssistant, phone: Phone) -> MockConfigEntry:
     )
     config_entry.add_to_hass(hass)
     return config_entry
+
+
+@pytest.fixture
+async def loaded(hass: HomeAssistant, entry: MockConfigEntry) -> AsyncIterator[MockConfigEntry]:
+    """The entry, set up for real. Unloaded again when the test ends."""
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    yield entry
+    if entry.state is ConfigEntryState.LOADED:
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
+@pytest.fixture
+async def household_member(hass: HomeAssistant, hass_admin_user: User) -> User:
+    """A normal account, not an administrator. The admin comes first: the first user created is the owner."""
+    user = await hass.auth.async_create_user("Household member", group_ids=[GROUP_ID_USER])
+    assert not user.is_admin
+    return user
 
 
 @pytest.fixture

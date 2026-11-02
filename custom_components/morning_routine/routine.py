@@ -55,13 +55,15 @@ def item_is_allowed(hass: HomeAssistant, item: str) -> bool:
     return registry_entry is not None and label is not None and label.label_id in registry_entry.labels
 
 
+def routine_store(hass: HomeAssistant, entry: ConfigEntry) -> Store[dict[str, Any]]:
+    return Store(hass, STORE_VERSION, f"{DOMAIN}.{entry.entry_id}", atomic_writes=True)
+
+
 class Routine:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self._hass = hass
         self._entry = entry
-        self._store: Store[dict[str, Any]] = Store(
-            hass, STORE_VERSION, f"{DOMAIN}.{entry.entry_id}", atomic_writes=True
-        )
+        self._store = routine_store(hass, entry)
         self._lock = asyncio.Lock()
         self._state = RoutineState()
         self._steps: list[Step] = []
@@ -159,9 +161,12 @@ class Routine:
         def change(now: datetime) -> None:
             self._clock = package
             rules.change_clock(self._state)
-            self._observe_sensor(self._hass.states.get(self._entry.data[CONF_ALARM_SENSOR]), now)
+            self._observe_current_sensor(now)
 
         await self._async_change(change)
+
+    async def async_reread_sensor(self) -> None:
+        await self._async_change(self._observe_current_sensor)
 
     async def async_set_steps(self, steps: list[Step]) -> None:
         def change(_now: datetime) -> None:
@@ -184,16 +189,18 @@ class Routine:
             return
         self._state, self._steps, self._on, self._clock, self._reported = state, steps, on, clock, reported
 
+    def snapshot(self) -> dict[str, Any]:
+        """What is saved to the Store."""
+        return {
+            "state": rules.state_to_dict(self._state),
+            "steps": rules.steps_to_list(self._steps),
+            "is_on": self._on,
+            "clock": self._clock,
+            "reported_packages": sorted(self._reported),
+        }
+
     async def _async_save(self) -> None:
-        await self._store.async_save(
-            {
-                "state": rules.state_to_dict(self._state),
-                "steps": rules.steps_to_list(self._steps),
-                "is_on": self._on,
-                "clock": self._clock,
-                "reported_packages": sorted(self._reported),
-            }
-        )
+        await self._store.async_save(self.snapshot())
 
     async def _async_begin(self) -> None:
         sensor_id = self._entry.data[CONF_ALARM_SENSOR]
@@ -252,6 +259,10 @@ class Routine:
             # Saved before the call: a crash can lose a run but never repeat one.
             alarm.ran.add(step.item)
             await self._async_save()
+            # A stop during the save means a reload may have started a new routine that sees this
+            # step as already run. Starting it here too could run it twice, so it is lost instead.
+            if self._stopped:
+                return
             # The call can take as long as the script or automation does, so it never holds the lock.
             self._hass.async_create_task(self._async_call_step(step), f"{DOMAIN} step {step.item}")
 
@@ -324,6 +335,9 @@ class Routine:
     def _on_registry(self, event: Event) -> None:
         if event.data.get("entity_id") in {step.item for step in self._steps}:
             self._hass.async_create_task(self._async_change())
+
+    def _observe_current_sensor(self, now: datetime) -> None:
+        self._observe_sensor(self._hass.states.get(self._entry.data[CONF_ALARM_SENSOR]), now)
 
     def _observe_sensor(self, new_state: State | None, now: datetime) -> None:
         if new_state is None or new_state.state == STATE_UNKNOWN:

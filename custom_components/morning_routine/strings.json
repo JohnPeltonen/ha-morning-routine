@@ -30,5 +30,70 @@
         }
       }
     }
+  },
+  "entity": {
+    "switch": {
+      "routine": {
+        "name": "Routine"
+      },
+      "skip_next_alarm": {
+        "name": "Skip next alarm"
+      }
+    },
+    "select": {
+      "clock": {
+        "name": "Clock to watch"
+      }
+    },
+    "sensor": {
+      "current_alarm": {
+        "name": "Current alarm"
+      },
+      "last_ignored_entry": {
+        "name": "Last ignored entry"
+      }
+    }
+  },
+  "exceptions": {
+    "clock_not_found": {
+      "message": "{clock} isn't one of the clocks this phone offers."
+    },
+    "entry_not_found": {
+      "message": "No morning routine has that config entry id."
+    },
+    "entry_not_loaded": {
+      "message": "That morning routine isn't running. Check that it is loaded in Settings, Devices & services."
+    },
+    "steps_not_a_list": {
+      "message": "Steps must be a list."
+    },
+    "invalid_step": {
+      "message": "Step {number} must have an item (text) and offset_minutes (a whole number), and may have enabled (true or false). Nothing else is allowed."
+    },
+    "item_not_allowed": {
+      "message": "{item} can't be a step. It must be a script, scene or automation that has the label \"morning routine\"."
+    },
+    "duplicate_item": {
+      "message": "{item} is listed twice. Each item can be a step once."
+    },
+    "offset_out_of_range": {
+      "message": "The offset for {item} must be a whole number of minutes from -{limit} to {limit}."
+    }
+  },
+  "services": {
+    "set_steps": {
+      "name": "Set steps",
+      "description": "Replaces all the steps of one morning routine. This is temporary, until the card can edit steps. Only administrators can use it.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Morning routine",
+          "description": "The routine whose steps are replaced."
+        },
+        "steps": {
+          "name": "Steps",
+          "description": "A list. Each step has an item (a script, scene or automation with the label \"morning routine\"), offset_minutes (-720 to 720, negative is before the alarm), and optionally enabled (true or false, default true)."
+        }
+      }
+    }
   }
 }

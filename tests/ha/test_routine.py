@@ -600,19 +600,45 @@ async def test_stop_during_a_batch_runs_nothing_more(
     save = routine._store.async_save
     saves = 0
 
-    async def stop_on_second_save(data: dict) -> None:
+    async def stop_on_third_save(data: dict) -> None:
+        nonlocal saves
+        saves += 1
+        if saves == 3:
+            routine.async_stop()
+        await save(data)
+
+    routine._store.async_save = stop_on_third_save
+
+    await advance(hass, freezer, at(ALARM, minutes=-30))
+
+    assert [call.data["entity_id"] for call in service_calls] == [labeled_script]
+    assert saves == 3
+
+
+async def test_stop_during_the_ran_save_doesnt_start_the_step(
+    hass, hass_storage, freezer, entry, phone, labeled_script, service_calls, start_routine
+):
+    routine = await start_routine(entry)
+    await configure(routine, [Step(labeled_script, -30)])
+    save = routine._store.async_save
+    saves = 0
+
+    async def stop_during_the_ran_save(data: dict) -> None:
         nonlocal saves
         saves += 1
         if saves == 2:
             routine.async_stop()
         await save(data)
 
-    routine._store.async_save = stop_on_second_save
+    routine._store.async_save = stop_during_the_ran_save
 
     await advance(hass, freezer, at(ALARM, minutes=-30))
 
-    assert [call.data["entity_id"] for call in service_calls] == [labeled_script]
+    # The save was the second one: the first is the evaluation, the second records the step as run.
+    assert saves == 2
     assert hass_storage[store_key(entry)]["data"]["state"]["alarms"][0]["ran"] == [labeled_script]
+    assert service_calls == []
+    assert routine.last_result is None
 
 
 async def test_setting_changed_while_starting_doesnt_bypass_restart_rule(
