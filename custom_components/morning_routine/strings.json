@@ -10,8 +10,8 @@
       }
     },
     "error": {
-      "no_tracker": "This phone's location entity is turned off or missing in Home Assistant. Turn it back on under Settings, Devices & services, Entities. Or remove the phone and add it again in the Home Assistant Android app.",
-      "phone_gone": "That phone's Next alarm sensor was turned off. Turn it back on in the Home Assistant Android app, then choose the phone again."
+      "no_tracker": "This phone's location entity is turned off or missing in Home Assistant. Go to Settings, Devices & services, Entities, and set the Status filter to show Disabled. Find the device tracker named after this phone and turn it on. If it isn't there, restart Home Assistant. Then add the routine again.",
+      "phone_gone": "That phone's Next alarm sensor was turned off. Turn it back on in the Home Assistant Android app. Then close this form and add the routine again."
     },
     "abort": {
       "already_configured": "This phone already has a morning routine.",
