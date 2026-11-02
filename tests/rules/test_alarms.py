@@ -382,6 +382,16 @@ def test_recheck_leaves_an_entry_that_still_counts():
     assert not alarm.cancelled
 
 
+def test_recheck_leaves_the_alarm_when_another_app_has_the_same_time():
+    state = alarm_followed_with_seconds()
+    alarm = state.current
+
+    recheck_current(state, at("09:00:03"), ROUTINES, CLOCK, True, at("08:01:00"))
+
+    assert state.current is alarm
+    assert not alarm.cancelled
+
+
 def test_recheck_leaves_the_alarm_when_the_entry_is_a_different_time():
     # The sensor shows an earlier entry. The followed alarm is hidden behind it and must survive.
     state = alarm_followed_with_seconds()

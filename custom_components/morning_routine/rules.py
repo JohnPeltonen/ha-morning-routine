@@ -153,7 +153,8 @@ def recheck_current(
     current = state.current
     if current is None or current.went_off or time != current.time:
         return
-    if check_entry(time, package, clock, require_zero_seconds, now) is not None:
+    # Only the seconds check can change here. Another app's entry at the same time is still just a repeat.
+    if check_entry(time, package, clock, require_zero_seconds, now) is IgnoreReason.NOT_ON_THE_MINUTE:
         _cancel_current(state)
 
 
