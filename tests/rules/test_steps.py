@@ -491,3 +491,58 @@ def test_next_wakeup_ignores_steps_of_skipped_alarm():
 
 def test_next_wakeup_with_nothing_tracked_is_none():
     assert next_wakeup(RoutineState(), [HEATER], at("06:00:00")) is None
+
+
+def test_restart_doesnt_start_step_lost_while_away():
+    state = home_state()
+    step = Step("script.after", 10)
+    state.last_location = "not_home"
+    assert run(state, [step], "07:10:00") == []
+    state.last_location = "home"
+    assert run(state, [step], "07:12:00") == []
+    assert restart(state, [step], "07:13:00") == []
+
+
+def test_restart_doesnt_start_step_of_alarm_seen_late_while_running():
+    state = RoutineState(last_location="home")
+    enter(state, "07:00:00", "07:02:00")
+    assert state.current.seen_late
+    step = Step("script.at", 0)
+    assert run(state, [step], "07:02:00") == []
+    assert restart(state, [step], "07:03:00") == []
+
+
+def test_restart_doesnt_start_step_lost_while_routine_was_off():
+    state = home_state()
+    step = Step("script.at", 0)
+    assert run(state, [step], "07:00:00", routine_on=False) == []
+    assert run(state, [step], "07:01:00", routine_on=True) == []
+    assert restart(state, [step], "07:02:00", routine_on=True) == []
+
+
+def test_alarm_first_seen_at_restart_keeps_the_5_minute_rule():
+    state = home_state()
+    step = Step("script.at", 0)
+    assert restart(state, [step], "07:03:00") == ["script.at"]
+
+
+def test_connection_drop_returning_same_alarm_catches_up():
+    state = home_state()
+    observe_no_alarm(state, at("06:26:00"))
+    assert state.current is None
+    enter(state, "07:00:00", "06:45:00")
+    assert run(state, [HEATER], "06:45:00") == ["script.heater"]
+
+
+def test_restart_drops_step_when_routine_is_off():
+    state = home_state()
+    assert restart(state, [HEATER], "06:31:00", routine_on=False) == []
+    assert state.current.dropped == {"script.heater"}
+
+
+def test_restart_drops_step_when_skip_is_on():
+    state = home_state()
+    set_skip(state, True, at("06:00:00"))
+    assert restart(state, [HEATER], "06:31:00") == []
+    assert state.current.dropped == {"script.heater"}
+    assert state.skip_next

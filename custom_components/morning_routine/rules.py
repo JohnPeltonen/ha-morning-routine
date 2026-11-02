@@ -166,18 +166,18 @@ def steps_to_run(
     settle(state, now)
     due: list[tuple[Alarm, Step]] = []
     for alarm in state.alarms:
-        if alarm.seen_late or not _could_run_steps(state, alarm):
+        if not _could_run_steps(state, alarm):
             continue
         blocked = not routine_on or not is_home(state) or (state.skip_next and not alarm.went_off)
-        if blocked:
-            continue
         for step in steps:
-            if not step.enabled or step.item in alarm.ran or step.item in alarm.dropped:
+            if step.item in alarm.ran or step.item in alarm.dropped:
                 continue
             run_at = alarm.time + timedelta(minutes=step.offset_minutes)
             if run_at > now:
                 continue
-            if now < alarm.time or now - run_at <= ON_TIME_GRACE:
+            if alarm.seen_late or (now >= alarm.time and now - run_at > ON_TIME_GRACE):
+                alarm.dropped.add(step.item)
+            elif step.enabled and not blocked:
                 due.append((alarm, step))
     return due
 
