@@ -8,6 +8,8 @@ SAME_ALARM_GAP = timedelta(minutes=20)
 NO_ALARM_AFTER = timedelta(seconds=60)
 CLOCK_SKEW = timedelta(seconds=5)
 RECORD_KEPT = timedelta(minutes=90)
+ON_TIME_GRACE = timedelta(seconds=10)
+LATE_LIMIT = timedelta(minutes=5)
 
 
 class IgnoreReason(StrEnum):
@@ -27,6 +29,13 @@ class Alarm:
     seen_late: bool = False
     ran: set[str] = field(default_factory=set)
     dropped: set[str] = field(default_factory=set)
+
+
+@dataclass(frozen=True)
+class Step:
+    item: str
+    offset_minutes: int
+    enabled: bool = True
 
 
 @dataclass
@@ -136,3 +145,88 @@ def observe_no_alarm(state: RoutineState, now: datetime) -> None:
 
 def change_clock(state: RoutineState) -> None:
     state.current = None
+
+
+def is_home(state: RoutineState) -> bool:
+    return state.last_location == "home"
+
+
+def _could_run_steps(state: RoutineState, alarm: Alarm) -> bool:
+    if alarm.skipped:
+        return False
+    return alarm.went_off or (alarm is state.current and not alarm.cancelled)
+
+
+def steps_to_run(
+    state: RoutineState,
+    steps: list[Step],
+    routine_on: bool,
+    now: datetime,
+) -> list[tuple[Alarm, Step]]:
+    settle(state, now)
+    due: list[tuple[Alarm, Step]] = []
+    for alarm in state.alarms:
+        if alarm.seen_late or not _could_run_steps(state, alarm):
+            continue
+        blocked = not routine_on or not is_home(state) or (state.skip_next and not alarm.went_off)
+        if blocked:
+            continue
+        for step in steps:
+            if not step.enabled or step.item in alarm.ran or step.item in alarm.dropped:
+                continue
+            run_at = alarm.time + timedelta(minutes=step.offset_minutes)
+            if run_at > now:
+                continue
+            if now < alarm.time or now - run_at <= ON_TIME_GRACE:
+                due.append((alarm, step))
+    return due
+
+
+def steps_after_restart(
+    state: RoutineState,
+    steps: list[Step],
+    routine_on: bool,
+    now: datetime,
+) -> list[tuple[Alarm, Step]]:
+    settle(state, now)
+    due: list[tuple[Alarm, Step]] = []
+    for alarm in state.alarms:
+        if not _could_run_steps(state, alarm):
+            continue
+        blocked = (
+            not routine_on
+            or not is_home(state)
+            or (state.skip_next and (not alarm.went_off or alarm.seen_late))
+        )
+        for step in steps:
+            if step.item in alarm.ran or step.item in alarm.dropped:
+                continue
+            late = now - (alarm.time + timedelta(minutes=step.offset_minutes))
+            if late < timedelta(0):
+                continue
+            if blocked or not step.enabled or late >= LATE_LIMIT:
+                alarm.dropped.add(step.item)
+            else:
+                due.append((alarm, step))
+    return due
+
+
+def next_wakeup(state: RoutineState, steps: list[Step], now: datetime) -> datetime | None:
+    times: list[datetime] = []
+    current = state.current
+    if current is not None and not current.went_off:
+        times.append(current.time - CLOCK_SKEW)
+    for alarm in state.alarms:
+        times.append(alarm.time + RECORD_KEPT)
+        if alarm.seen_late or not _could_run_steps(state, alarm):
+            continue
+        for step in steps:
+            if step.enabled:
+                times.append(alarm.time + timedelta(minutes=step.offset_minutes))
+    future = [time for time in times if time > now]
+    return min(future) if future else None
+
+
+def set_skip(state: RoutineState, on: bool, now: datetime) -> None:
+    settle(state, now)
+    state.skip_next = on
