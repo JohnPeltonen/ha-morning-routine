@@ -1,1 +1,33 @@
-{}
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Choose a phone",
+        "description": "Choose the phone whose alarms this routine should follow. If a phone isn't listed, turn on its Next alarm sensor in the Home Assistant Android app, under Settings, Companion app, Manage sensors. Make sure that sensor's Allow list is off.",
+        "data": {
+          "device_id": "Phone"
+        }
+      }
+    },
+    "error": {
+      "no_tracker": "This phone has no location entity. In the Home Assistant Android app, turn on location sharing, then try again."
+    },
+    "abort": {
+      "already_configured": "This phone already has a morning routine.",
+      "no_phones": "No phones with a Next alarm sensor were found. Turn on the Next alarm sensor in the Home Assistant Android app, under Settings, Companion app, Manage sensors. Make sure that sensor's Allow list is off. Then add the routine again."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Alarm settings",
+        "data": {
+          "require_zero_seconds": "Only follow alarms set to a whole minute"
+        },
+        "data_description": {
+          "require_zero_seconds": "Alarms you set yourself have 00 seconds. Some phone entries that aren't alarms don't. Leave this on to skip them."
+        }
+      }
+    }
+  }
+}
