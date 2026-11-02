@@ -172,10 +172,13 @@ def steps_to_run(
         for step in steps:
             if step.item in alarm.ran or step.item in alarm.dropped:
                 continue
+            if alarm.seen_late:
+                alarm.dropped.add(step.item)
+                continue
             run_at = alarm.time + timedelta(minutes=step.offset_minutes)
             if run_at > now:
                 continue
-            if alarm.seen_late or (now >= alarm.time and now - run_at > ON_TIME_GRACE):
+            if now >= alarm.time and now - run_at > ON_TIME_GRACE:
                 alarm.dropped.add(step.item)
             elif step.enabled and not blocked:
                 due.append((alarm, step))

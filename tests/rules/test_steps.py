@@ -521,9 +521,27 @@ def test_restart_doesnt_start_step_lost_while_routine_was_off():
 
 
 def test_alarm_first_seen_at_restart_keeps_the_5_minute_rule():
-    state = home_state()
+    state = RoutineState(last_location="home")
+    enter(state, "07:00:00", "07:03:00")
+    assert state.current.seen_late
     step = Step("script.at", 0)
     assert restart(state, [step], "07:03:00") == ["script.at"]
+
+
+def test_restart_doesnt_start_later_step_of_alarm_seen_late_while_running():
+    state = RoutineState(last_location="home")
+    enter(state, "07:00:00", "07:02:00")
+    step = Step("script.after", 10)
+    assert run(state, [step], "07:02:00") == []
+    assert restart(state, [step], "07:11:00") == []
+
+
+def test_seen_late_alarm_drops_future_steps_at_once():
+    state = RoutineState(last_location="home")
+    enter(state, "07:00:00", "07:02:00")
+    step = Step("script.after", 10)
+    assert run(state, [step], "07:02:00") == []
+    assert state.current.dropped == {"script.after"}
 
 
 def test_connection_drop_returning_same_alarm_catches_up():
