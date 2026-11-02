@@ -315,3 +315,38 @@ def test_alarm_defaults_are_not_shared():
     assert second.ran == set()
     assert second.dropped == set()
     assert RoutineState().alarms == []
+
+
+def test_alarm_first_seen_after_it_passed_leaves_skip_on():
+    state = RoutineState(skip_next=True)
+    enter(state, "09:00:00", "09:06:00")
+    alarm = state.current
+    assert alarm.went_off
+    assert alarm.seen_late
+    assert not alarm.skipped
+    assert state.skip_next
+
+
+def test_alarm_returning_after_it_passed_leaves_skip_on():
+    state = state_with_alarm()
+    alarm = state.current
+    enter(state, "09:30:00", "08:01:00", package=ROUTINES)
+    assert alarm.cancelled
+    state.skip_next = True
+    enter(state, "09:00:00", "09:06:00")
+    assert state.current is alarm
+    assert not alarm.cancelled
+    assert alarm.went_off
+    assert alarm.seen_late
+    assert not alarm.skipped
+    assert state.skip_next
+
+
+def test_alarm_seen_as_it_rings_uses_up_the_skip():
+    state = RoutineState(skip_next=True)
+    enter(state, "09:00:00", "09:00:03")
+    alarm = state.current
+    assert alarm.went_off
+    assert not alarm.seen_late
+    assert alarm.skipped
+    assert not state.skip_next

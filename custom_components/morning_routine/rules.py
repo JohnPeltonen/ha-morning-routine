@@ -24,6 +24,7 @@ class Alarm:
     went_off: bool = False
     cancelled: bool = False
     skipped: bool = False
+    seen_late: bool = False
     ran: set[str] = field(default_factory=set)
     dropped: set[str] = field(default_factory=set)
 
@@ -121,6 +122,9 @@ def observe_entry(
         alarm = Alarm(time=time, latest=time)
         state.alarms.append(alarm)
         state.current = alarm
+    if not alarm.went_off and now > alarm.time + CLOCK_SKEW:
+        alarm.went_off = True
+        alarm.seen_late = True
     settle(state, now)
 
 
