@@ -1,0 +1,13 @@
+{
+  "domain": "morning_routine",
+  "name": "Morning Routine",
+  "after_dependencies": ["automation", "mobile_app", "person", "scene", "script"],
+  "codeowners": ["@JohnPeltonen"],
+  "config_flow": true,
+  "documentation": "https://github.com/JohnPeltonen/ha-morning-routine",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/JohnPeltonen/ha-morning-routine/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
