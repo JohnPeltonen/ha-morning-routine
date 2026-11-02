@@ -9,8 +9,8 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import RoutineConfigEntry
-from .entity import RoutineEntity
+from custom_components.morning_routine import RoutineConfigEntry
+from custom_components.morning_routine.entity import RoutineEntity
 
 
 async def async_setup_entry(

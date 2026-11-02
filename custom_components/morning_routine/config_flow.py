@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.selector import SelectOptionDict, SelectSelector, SelectSelectorConfig
 
-from .const import CONF_ALARM_SENSOR, CONF_DEVICE_ID, CONF_REQUIRE_ZERO_SECONDS, CONF_TRACKER, DOMAIN
+from custom_components.morning_routine.const import CONF_ALARM_SENSOR, CONF_DEVICE_ID, CONF_REQUIRE_ZERO_SECONDS, CONF_TRACKER, DOMAIN
 
 OPTIONS_SCHEMA = probatio.Schema({probatio.Required(CONF_REQUIRE_ZERO_SECONDS, default=True): bool})
 

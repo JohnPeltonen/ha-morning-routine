@@ -23,9 +23,9 @@ from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from . import rules
-from .clocks import clock_options
-from .const import (
+from custom_components.morning_routine import rules
+from custom_components.morning_routine.clocks import clock_options
+from custom_components.morning_routine.const import (
     ALLOWED_DOMAINS,
     CONF_ALARM_SENSOR,
     CONF_DEVICE_ID,
@@ -35,7 +35,7 @@ from .const import (
     EVENT_STEP_RAN,
     LABEL_NAME,
 )
-from .rules import Alarm, IgnoredEntry, RoutineState, Step
+from custom_components.morning_routine.rules import Alarm, IgnoredEntry, RoutineState, Step
 
 logger = logging.getLogger(__name__)
 

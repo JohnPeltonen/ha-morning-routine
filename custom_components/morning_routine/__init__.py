@@ -11,9 +11,9 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from .const import ATTR_CONFIG_ENTRY_ID, ATTR_STEPS, DOMAIN, MAX_OFFSET_MINUTES, SERVICE_SET_STEPS
-from .routine import Routine, item_is_allowed, routine_store
-from .rules import Step
+from custom_components.morning_routine.const import ATTR_CONFIG_ENTRY_ID, ATTR_STEPS, DOMAIN, MAX_OFFSET_MINUTES, SERVICE_SET_STEPS
+from custom_components.morning_routine.routine import Routine, item_is_allowed, routine_store
+from custom_components.morning_routine.rules import Step
 
 PLATFORMS = [Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)

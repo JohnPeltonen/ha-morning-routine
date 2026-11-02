@@ -4,7 +4,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from . import RoutineConfigEntry
+from custom_components.morning_routine import RoutineConfigEntry
 
 
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: RoutineConfigEntry) -> dict[str, Any]:

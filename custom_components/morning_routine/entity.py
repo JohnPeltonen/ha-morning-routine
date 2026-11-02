@@ -3,8 +3,8 @@
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
-from . import RoutineConfigEntry
-from .const import DOMAIN
+from custom_components.morning_routine import RoutineConfigEntry
+from custom_components.morning_routine.const import DOMAIN
 
 
 class RoutineEntity(Entity):
