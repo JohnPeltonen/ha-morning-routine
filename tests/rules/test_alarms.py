@@ -10,6 +10,8 @@ from rules import (
     observe_no_alarm,
     recheck_current,
     settle,
+    Step,
+    steps_to_run,
 )
 
 CLOCK = "com.sec.android.app.clockpackage"
@@ -351,6 +353,64 @@ def test_alarm_seen_as_it_rings_uses_up_the_skip():
     assert not alarm.seen_late
     assert alarm.skipped
     assert not state.skip_next
+
+
+def alarm_rang_and_sensor_moved_to_the_next_one() -> tuple[RoutineState, Alarm]:
+    state = RoutineState(last_location="home")
+    observe_entry(state, at("09:00:00"), CLOCK, CLOCK, True, at("08:00:00"))
+    rang = state.current
+    rang.ran.add("script.heater")
+    observe_entry(state, at("23:00:00"), CLOCK, CLOCK, True, at("09:00:01"))
+    return state, rang
+
+
+def test_snooze_seen_after_the_sensor_moved_on_is_the_same_alarm():
+    state, rang = alarm_rang_and_sensor_moved_to_the_next_one()
+
+    observe_entry(state, at("09:05:00"), CLOCK, CLOCK, True, at("09:00:02"))
+
+    assert state.current is rang
+    assert rang.latest == at("09:05:00")
+    assert rang.time == at("09:00:00")
+    assert len(state.alarms) == 2
+
+
+def test_snooze_seen_after_the_sensor_moved_on_runs_nothing_again():
+    state, _ = alarm_rang_and_sensor_moved_to_the_next_one()
+
+    observe_entry(state, at("09:05:00"), CLOCK, CLOCK, True, at("09:00:02"))
+
+    assert steps_to_run(state, [Step("script.heater", -30)], True, at("09:00:02")) == []
+
+
+def test_snooze_seen_after_the_sensor_moved_on_doesnt_use_up_a_skip():
+    state, _ = alarm_rang_and_sensor_moved_to_the_next_one()
+    state.skip_next = True
+
+    observe_entry(state, at("09:05:00"), CLOCK, CLOCK, True, at("09:00:02"))
+    settle(state, at("09:05:00"))
+
+    assert state.skip_next
+
+
+def test_next_alarm_comes_back_after_a_snooze():
+    state, _ = alarm_rang_and_sensor_moved_to_the_next_one()
+    tomorrow = state.current
+
+    observe_entry(state, at("09:05:00"), CLOCK, CLOCK, True, at("09:00:02"))
+    observe_entry(state, at("23:00:00"), CLOCK, CLOCK, True, at("09:05:01"))
+
+    assert state.current is tomorrow
+    assert not tomorrow.went_off
+
+
+def test_entry_more_than_20_minutes_after_a_rung_alarm_is_a_new_alarm():
+    state, rang = alarm_rang_and_sensor_moved_to_the_next_one()
+
+    observe_entry(state, at("09:21:00"), CLOCK, CLOCK, True, at("09:00:02"))
+
+    assert state.current is not rang
+    assert state.current.time == at("09:21:00")
 
 
 def alarm_followed_with_seconds(now: str = "08:00:00") -> RoutineState:

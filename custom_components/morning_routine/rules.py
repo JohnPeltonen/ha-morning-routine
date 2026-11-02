@@ -90,6 +90,17 @@ def _cancel_current(state: RoutineState) -> None:
         state.current = None
 
 
+def _record_for(state: RoutineState, time: datetime) -> Alarm | None:
+    for alarm in state.alarms:
+        if time == alarm.time or time == alarm.latest:
+            return alarm
+    # A snooze can arrive after the sensor has already moved on to the next alarm.
+    for alarm in state.alarms:
+        if alarm.went_off and alarm.time < time <= alarm.latest + SAME_ALARM_GAP:
+            return alarm
+    return None
+
+
 def observe_entry(
     state: RoutineState,
     time: datetime,
@@ -122,15 +133,13 @@ def observe_entry(
                 current.time = time
             return
 
-    for alarm in state.alarms:
-        if time == alarm.time or time == alarm.latest:
-            alarm.cancelled = False
-            state.current = alarm
-            break
-    else:
+    alarm = _record_for(state, time)
+    if alarm is None:
         alarm = Alarm(time=time, latest=time)
         state.alarms.append(alarm)
-        state.current = alarm
+    alarm.cancelled = False
+    alarm.latest = max(alarm.latest, time)
+    state.current = alarm
     if not alarm.went_off and now > alarm.time + CLOCK_SKEW:
         alarm.went_off = True
         alarm.seen_late = True
