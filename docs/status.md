@@ -1,6 +1,6 @@
 # Status
 
-Last updated 2026-11-02.
+Last updated 2026-11-10.
 
 ## Where Phase 1 stands
 
@@ -13,9 +13,7 @@ Phase 1 is built and passing CI. It is not installed on any server yet.
 
 ## Next, in order
 
-1. **A second look at the final-review fixes.** Not run yet. It covers commits c23f0f7 (treat a snooze seen after the sensor moved on as the same alarm) and 125d70d (limit steps to 60 minutes after the alarm and correct the README), which is the range `8d29858..125d70d`. Recommended before the install, because the snooze fix changes how entries are matched to alarms. Estimated at about 100k tokens. Give the reviewer the spec, the diff, and the two findings it fixed:
-   - **Snooze after the sensor moved on (blocking).** If the phone showed the next alarm before a snooze entry arrived, the snooze became a new alarm. A step could run twice, and Skip next alarm could be used up by the snooze. Fixed by ruling 25 below.
-   - **Late steps never ran.** A step more than 90 minutes after the alarm was accepted but could never run, because an alarm's record is kept for 90 minutes. Fixed by ruling 26 below.
+1. **A second look at the final-review fixes.** Done 2026-11-10, with no findings. It covered c23f0f7 (treat a snooze seen after the sensor moved on as the same alarm) and 125d70d (limit steps to 60 minutes after the alarm and correct the README). The snooze fix relies on the sensor moving off an alarm only after the alarm time. In 10 days of readings from two phones, the sensor moved on 0.5 to 6.3 seconds after the alarm time at every ring, and never before.
 2. **Task 9, step 4: install on the owner's server.** Needs the owner's approval. The server steps are in the owner's private repo (see [CLAUDE.md](../CLAUDE.md)).
 3. **Task 9, step 5: a test with a harmless script.** Needs the owner's approval, and someone must set a test alarm on the phone in person.
 4. **Task 9, step 6: the real routine.** Needs the owner's approval.
@@ -85,6 +83,16 @@ Decisions made during the run, copied from its ledger. Each says what was decide
 25. A rung alarm claims an entry up to 20 minutes after its latest time even when it isn't current. Spec: a snooze following a ring is the same alarm, and a step must not run twice. If wrong, a separate real alarm within 20 minutes after a rung one runs no pre-alarm steps, which the spec's 7:00 and 7:10 example already accepts.
 26. `set_steps` limits offsets to -720 to 60, not 720. The record lasts 90 minutes, and a step past that was accepted and silently never ran. The plan's 720 can't be honoured without keeping records longer. If wrong, someone wanting a later step waits for a later phase.
 27. `_schedule` gets the evaluation's `now`, not a fresh one, so a step due during the saves gets a timer. A past time fires at once, then re-evaluates with a fresh `now`.
+
+## Samsung Clock and the whole-minute check
+
+Found 2026-11-10 in 10 days of readings from one Samsung phone. It is not in the reviewed commits.
+
+- On about half the mornings, Samsung Clock replaced the alarm with the same alarm 2 seconds later, some minutes before it rang.
+- With the whole-minute check on, that entry is rejected and the alarm is treated as cancelled. Steps already run are not affected. Steps due after that point don't run, Skip next alarm is not used up, and a snooze that follows could run earlier steps again.
+- With the check off, a replay of a real morning ran every step once and used up the skip.
+- On that phone every entry came from Samsung Clock, so the check filtered nothing else.
+- The owner's decision: turn the whole-minute check off for a routine that follows Samsung Clock. No code change for now. A possible later change is to stop treating a rejected entry within a few seconds of the current alarm as a cancel.
 
 ## Possible GitHub issues
 
