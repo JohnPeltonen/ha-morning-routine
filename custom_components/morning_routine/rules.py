@@ -36,6 +36,17 @@ class Step:
     item: str
     offset_minutes: int
     enabled: bool = True
+    id: str = ""
+    action: str = "run"
+    brightness: int | None = None
+    temperature: float | None = None
+    heat_to: float | None = None
+    cool_to: float | None = None
+
+    @property
+    def key(self) -> str:
+        """What an alarm records as ran or dropped. A step with no id is known by its item."""
+        return self.id or self.item
 
 
 @dataclass
@@ -200,16 +211,16 @@ def steps_to_run(
             continue
         blocked = not routine_on or not is_home(state) or (state.skip_next and not alarm.went_off)
         for step in steps:
-            if step.item in alarm.ran or step.item in alarm.dropped:
+            if step.key in alarm.ran or step.key in alarm.dropped:
                 continue
             if alarm.seen_late:
-                alarm.dropped.add(step.item)
+                alarm.dropped.add(step.key)
                 continue
             run_at = alarm.time + timedelta(minutes=step.offset_minutes)
             if run_at > now:
                 continue
             if now >= alarm.time and now - run_at > ON_TIME_GRACE:
-                alarm.dropped.add(step.item)
+                alarm.dropped.add(step.key)
             elif step.enabled and not blocked:
                 due.append((alarm, step))
     return due
@@ -232,13 +243,13 @@ def steps_after_restart(
             or (state.skip_next and (not alarm.went_off or alarm.seen_late))
         )
         for step in steps:
-            if step.item in alarm.ran or step.item in alarm.dropped:
+            if step.key in alarm.ran or step.key in alarm.dropped:
                 continue
             late = now - (alarm.time + timedelta(minutes=step.offset_minutes))
             if late < timedelta(0):
                 continue
             if blocked or not step.enabled or late >= LATE_LIMIT:
-                alarm.dropped.add(step.item)
+                alarm.dropped.add(step.key)
             else:
                 due.append((alarm, step))
     return due
@@ -329,15 +340,34 @@ def state_from_dict(data: dict) -> RoutineState:
     )
 
 
+STEP_SETTINGS = ("brightness", "temperature", "heat_to", "cool_to")
+
+
 def steps_to_list(steps: list[Step]) -> list[dict]:
-    return [
-        {"item": step.item, "offset_minutes": step.offset_minutes, "enabled": step.enabled}
-        for step in steps
-    ]
+    # Only what differs from a plain run step is written, so older files and newer ones match.
+    result = []
+    for step in steps:
+        entry: dict = {"item": step.item, "offset_minutes": step.offset_minutes, "enabled": step.enabled}
+        if step.id:
+            entry["id"] = step.id
+        if step.action != "run":
+            entry["action"] = step.action
+        for name in STEP_SETTINGS:
+            if getattr(step, name) is not None:
+                entry[name] = getattr(step, name)
+        result.append(entry)
+    return result
 
 
 def steps_from_list(data: list[dict]) -> list[Step]:
     return [
-        Step(item=entry["item"], offset_minutes=entry["offset_minutes"], enabled=entry["enabled"])
+        Step(
+            item=entry["item"],
+            offset_minutes=entry["offset_minutes"],
+            enabled=entry["enabled"],
+            id=entry.get("id", ""),
+            action=entry.get("action", "run"),
+            **{name: entry.get(name) for name in STEP_SETTINGS},
+        )
         for entry in data
     ]

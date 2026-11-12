@@ -103,3 +103,25 @@ def test_steps_round_trip_through_json():
 
 def test_no_steps_round_trip():
     assert steps_from_list(steps_to_list([])) == []
+
+
+def test_device_steps_round_trip_through_json():
+    steps = [
+        Step("light.lamp", -30, True, id="a", action="turn_on", brightness=40),
+        Step("climate.heater", -20, False, id="b", action="turn_on", temperature=115),
+        Step("climate.hall", 0, True, id="c", action="set_temperature", heat_to=68, cool_to=74.5),
+        Step("light.lamp", 10, True, id="d", action="turn_off"),
+    ]
+    assert steps_from_list(json.loads(json.dumps(steps_to_list(steps)))) == steps
+
+
+def test_a_step_saved_by_an_older_version_loads_as_a_run_step():
+    old = [{"item": "script.heater", "offset_minutes": -30, "enabled": True}]
+    assert steps_from_list(old) == [Step("script.heater", -30, True)]
+    assert steps_from_list(old)[0].action == "run"
+
+
+def test_a_run_step_is_saved_with_the_same_three_keys_as_before():
+    assert steps_to_list([Step("script.heater", -30)]) == [
+        {"item": "script.heater", "offset_minutes": -30, "enabled": True}
+    ]

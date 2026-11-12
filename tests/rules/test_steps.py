@@ -564,3 +564,37 @@ def test_restart_drops_step_when_skip_is_on():
     assert restart(state, [HEATER], "06:31:00") == []
     assert state.current.dropped == {"script.heater"}
     assert state.skip_next
+
+
+def test_two_steps_for_one_item_each_run_once_under_their_own_key():
+    state = home_state()
+    on = Step("light.lamp", -30, id="a", action="turn_on")
+    off = Step("light.lamp", -20, id="b", action="turn_off")
+
+    first = steps_to_run(state, [on, off], True, at("06:30:00"))
+    assert [step.id for _, step in first] == ["a"]
+    first[0][0].ran.add(first[0][1].key)
+    second = steps_to_run(state, [on, off], True, at("06:40:00"))
+
+    assert [step.id for _, step in second] == ["b"]
+
+
+def test_a_step_without_an_id_is_tracked_by_its_item():
+    assert HEATER.key == "script.heater"
+    assert Step("light.lamp", 0, id="a").key == "a"
+
+
+def test_a_late_step_is_dropped_under_its_key():
+    state = home_state()
+    lamp = Step("light.lamp", -30, id="a", action="turn_on")
+
+    assert run(state, [lamp], "07:00:30") == []
+    assert state.alarms[0].dropped == {"a"}
+
+
+def test_restart_drops_a_late_step_under_its_key():
+    state = home_state()
+    lamp = Step("light.lamp", -30, id="a", action="turn_on")
+
+    assert restart(state, [lamp], "06:40:00") == []
+    assert state.alarms[0].dropped == {"a"}
