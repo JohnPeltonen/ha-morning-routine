@@ -6,10 +6,10 @@ Last updated 2026-11-11.
 
 Phase 2 is the dashboard card with time steps. It is built and pushed. It is not on any server yet.
 
-- Tasks 1 to 7 of the [Phase 2 plan](superpowers/plans/2026-11-10-phase-2-card-with-time-steps.md) are done, and Task 8 through its final review. One session built every task, and one fresh reviewer read the whole change at the end.
+- Tasks 1 to 7 of the [Phase 2 plan](superpowers/plans/2026-11-10-phase-2-card-with-time-steps.md) are done, and Task 8 through step 4. One session built every task. One fresh reviewer then read the whole change on 2026-11-11, and its two most serious findings were fixed (see "Final review of Phase 2" below).
 - The integration version is 0.2.0.
-- Tests: 142 rules and translation tests, 127 Home Assistant tests, and 20 card logic tests.
-- The card was run in a browser at 360 pixels wide against a fake server (`tests/card/demo.html`). Every case in the plan was checked there. It has not been seen inside Home Assistant.
+- Tests: 142 rules and translation tests, 127 Home Assistant tests, and 29 card tests (23 for the logic, 6 for the element when the connection drops).
+- The card was run in a browser at 360 pixels wide against a fake server (`tests/card/demo.html`). The plan's demo cases and form checks were gone through there by script, and 3 screenshots were kept, not one per case as the plan asked. The demo's fake server can't drop its connection, so a Home Assistant restart was not seen in a browser; the element tests cover it. The card has not been seen inside Home Assistant.
 
 ### What Phase 2 added
 
@@ -31,9 +31,38 @@ Each says what was decided, why, and what it costs if wrong.
 2. The card tests run with `node --test "tests/card/*.test.mjs"`. Node 24 on Windows fails when given the folder. No cost.
 3. The card and its form were committed together. They are one class. Cost: a coarser history.
 4. The minutes box is a text box with a number keypad, not a number box. A number box hides letters from the check, so typing "abc" could not get its sentence. Cost if wrong: one attribute.
-5. After the connection to Home Assistant comes back, the card subscribes again by itself, and does not rely on the frontend library to do it. After a restart the routine may not be loaded yet, and the card's own 10-second retry covers that. If wrong, a card could show an old view after a reconnect until the page is reloaded.
+5. After the connection to Home Assistant comes back, the card subscribes again by itself, and does not rely on the frontend library to do it. After a restart the routine may not be loaded yet, and the card's own 10-second retry covers that. The first build of this could leave the card stuck until the page was reloaded; the final review found that and it is fixed.
 6. `build_view` takes a plain `ConfigEntry` type hint. Importing the integration's own alias would be a circular import. Cost: a type hint.
 7. A second error text, `clock_not_offered`, sits beside the older `clock_not_found`. The older one names the clock; the card's command has only an app id to show, which means nothing to a person.
+
+### Final review of Phase 2
+
+One fresh reviewer read commits cd91a1e (add the Phase 2 plan) to 6d0ad91 (document the card and record Phase 2 status) on 2026-11-11. It ran every test suite and wrote its own probes.
+
+**Fixed, each with a test that failed first:**
+
+- **The card could get stuck after a connection drop.** A subscribe made while the connection was down, or cut off by a drop, was never answered, and the card then refused to try again. That left it blank or saying "This routine isn't available" until the page was reloaded. The card now sends nothing while the connection is down, and a new subscribe is allowed after every reconnect. Tests: `tests/card/card-element.test.mjs`.
+- **An open form could switch to a different item without saying so.** If someone else used the chosen item as a step while the form was open, the picker moved to the first item left, and Save would have added that one. The picker now shows "Choose one", the form says "That choice is no longer available. Choose again.", and Save is off until something is chosen. Test: `chosenItem` in `tests/card/card-logic.test.mjs`.
+
+**Checked and found fine:** the five Review Focus cases in the plan on the server, every change by a non-admin account, no `innerHTML` in the card, no red, no clock times, and every exact text in the plan.
+
+**Found and not fixed.** None is filed as an issue. The owner confirms each one first.
+
+- Each subscribe leaves one callback on the routine's config entry until the routine reloads. Memory grows slowly with every dashboard opened. (`websocket.py`)
+- The server sends the same view again for every entity or label registry change anywhere in Home Assistant. Each one redraws the card, which can close an open dropdown and clear a refusal message early. (`websocket.py`)
+- `test_a_second_routine_does_not_register_the_card_twice` can't fail, because Home Assistant keeps the addresses in a set. (`tests/ha/test_card.py`)
+- Keyboard focus is lost after a switch or the clock picker is used, because the controls are disabled while the change is sent.
+- The "alarm time has already passed" sentence and a renamed routine title appear only after some other change or reopening the page. Nothing sends a new view for them.
+- The switches are 36 by 20 pixels and a step's name is one line of text, which are small targets on a phone. The form's dialog has no accessible name.
+- When a routine unloads, the card's unsubscribe gets an error answer from the server. Harmless.
+- A read-only account can also change a routine. The spec says anyone logged in, so this was left as it is.
+- `test_subscriber_is_told_when_the_routine_unloads` checks the message only, not that the server's listeners were removed.
+
+**Card text added during the build that the plan didn't list.** The plan says card text is the owner's call:
+
+- "That change couldn't be saved." Shown when a change fails and the server gave no reason.
+- "That choice is no longer available. Choose again." and the picker's "Choose one".
+- Screen reader labels: "Routine", "Edit step: (the step's name)", "Before or after the alarm".
 
 ## Where Phase 1 stands
 

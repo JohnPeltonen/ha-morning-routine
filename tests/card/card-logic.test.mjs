@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  chosenItem,
   formItems,
   joinOffset,
   offsetError,
@@ -193,4 +194,19 @@ test("problemText has a sentence for every code the server sends", () => {
   );
   assert.equal(problemText("no_clock"), "Choose a clock below. Nothing runs until one is chosen.");
   assert.equal(problemText("something_new"), null);
+});
+
+test("chosenItem starts a new form on the first item", () => {
+  const items = [{ item: "script.a" }, { item: "script.b" }];
+  assert.equal(chosenItem(items, null), "script.a");
+  assert.equal(chosenItem([], null), "");
+});
+
+test("chosenItem keeps a choice that is still offered", () => {
+  assert.equal(chosenItem([{ item: "script.a" }, { item: "script.b" }], "script.b"), "script.b");
+});
+
+test("chosenItem chooses nothing when the choice is gone, and never another item", () => {
+  assert.equal(chosenItem([{ item: "script.a" }], "script.b"), "");
+  assert.equal(chosenItem([{ item: "script.a" }], ""), "");
 });

@@ -80,6 +80,13 @@ export function formItems(view, editingItem) {
   return items;
 }
 
+// Which item the form's picker shows. `selected` is null for a form that was just opened.
+// A choice that is no longer offered becomes no choice, never a different item.
+export function chosenItem(items, selected) {
+  if (selected === null) return items.length ? items[0].item : "";
+  return items.some((entry) => entry.item === selected) ? selected : "";
+}
+
 function wireSteps(view) {
   return view.steps.map((step) => ({
     item: step.item,
@@ -120,6 +127,7 @@ if (globalThis.customElements) {
   const TEXT_NOTHING_TO_ADD =
     'Nothing else has the "morning routine" label. An admin can add the label to a script, scene or automation.';
   const TEXT_NOT_SAVED = "That change couldn't be saved.";
+  const TEXT_CHOICE_GONE = "That choice is no longer available. Choose again.";
 
   const STYLE = `
     :host { display: block; }
@@ -213,7 +221,7 @@ if (globalThis.customElements) {
       this._title = null;
       this._unavailable = false;
       this._unsubscribe = null;
-      this._subscribing = false;
+      this._pending = null;
       this._generation = 0;
       this._retry = null;
       this._busy = false;
@@ -298,10 +306,14 @@ if (globalThis.customElements) {
     }
 
     async _subscribe() {
-      if (this._subscribing || this._unsubscribe || this._retry !== null) return;
-      if (!this.isConnected || !this._hass || !this._routineId) return;
-      this._subscribing = true;
       const generation = this._generation;
+      // A call from before the last drop or change may never be answered, so only a call
+      // made for the current generation counts as waiting.
+      if (this._pending === generation || this._unsubscribe || this._retry !== null) return;
+      if (!this.isConnected || !this._hass || !this._routineId) return;
+      // Nothing can be sent while the connection is down. Its "ready" event subscribes again.
+      if (this._hass.connection.connected === false) return;
+      this._pending = generation;
       let unsubscribe = null;
       let failed = false;
       try {
@@ -315,7 +327,7 @@ if (globalThis.customElements) {
       } catch {
         failed = true;
       }
-      this._subscribing = false;
+      if (this._pending === generation) this._pending = null;
       if (generation !== this._generation) {
         // Something changed while waiting: the page was left, or the routine was swapped.
         quietly(unsubscribe);
@@ -547,7 +559,7 @@ if (globalThis.customElements) {
       if (editingItem !== null && !step) return;
       const { minutes, direction } = step ? splitOffset(step.offset_minutes) : { minutes: 30, direction: "before" };
 
-      const item = h("select", { id: "form-item", class: "wide" });
+      const item = h("select", { id: "form-item", class: "wide", onchange: () => this._syncFormButtons() });
       const minutesBox = h("input", {
         id: "form-minutes",
         class: "minutes",
@@ -603,10 +615,11 @@ if (globalThis.customElements) {
     _fillFormItems(selected) {
       const form = this._form;
       const items = formItems(this._view, form.editing);
-      const keep = items.some((entry) => entry.item === selected) ? selected : items.length ? items[0].item : "";
-      form.item.replaceChildren(
-        ...items.map((entry) => h("option", { value: entry.item, selected: entry.item === keep }, entry.name)),
-      );
+      const keep = chosenItem(items, selected);
+      const options = items.map((entry) => h("option", { value: entry.item, selected: entry.item === keep }, entry.name));
+      if (keep === "") options.unshift(h("option", { value: "", selected: true, disabled: true }, "Choose one"));
+      form.item.replaceChildren(...options);
+      return keep;
     }
 
     _refreshForm() {
@@ -617,7 +630,8 @@ if (globalThis.customElements) {
         this._closeForm();
         return;
       }
-      this._fillFormItems(form.item.value);
+      const before = form.item.value;
+      if (this._fillFormItems(before) !== before) form.error.textContent = TEXT_CHOICE_GONE;
       this._syncFormButtons();
     }
 
