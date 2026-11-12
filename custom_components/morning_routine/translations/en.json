@@ -58,6 +58,9 @@
     "clock_not_found": {
       "message": "{clock} isn't one of the clocks this phone offers."
     },
+    "clock_not_offered": {
+      "message": "That clock isn't offered for this phone."
+    },
     "entry_not_found": {
       "message": "No morning routine has that config entry id."
     },

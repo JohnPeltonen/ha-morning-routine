@@ -8,6 +8,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
+from custom_components.morning_routine import websocket
 from custom_components.morning_routine.const import (
     ATTR_CONFIG_ENTRY_ID,
     ATTR_STEPS,
@@ -36,6 +37,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         keep = frozenset(step.item for step in routine.steps)
         await routine.async_set_steps(parse_steps(hass, call.data[ATTR_STEPS], keep))
 
+    websocket.async_register(hass)
     # Temporary: steps are set from Developer tools until the card exists.
     async_register_admin_service(hass, DOMAIN, SERVICE_SET_STEPS, set_steps, SET_STEPS_SCHEMA)
     return True
