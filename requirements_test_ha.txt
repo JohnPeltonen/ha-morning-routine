@@ -1,2 +1,4 @@
 # Home Assistant 2026.10.0 (the minimum in hacs.json) and its test helpers. CI only.
 pytest-homeassistant-custom-component==0.13.371
+# The card registration depends on the frontend component, which needs this package to set up.
+home-assistant-frontend==20260930.2
