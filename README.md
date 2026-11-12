@@ -30,9 +30,9 @@ Each routine has these entities:
 
 Anyone logged in to Home Assistant can use the switches and the clock picker, and can change the steps from the card.
 
-## Choose what a step may run
+## Choose which scripts a step may run
 
-A step can be a script, scene or automation. An admin decides which ones are offered:
+Lights and thermostats can be steps with no setup. Scripts, scenes and automations can be steps only when an admin offers them:
 
 1. Create a label named `morning routine` under Settings, Areas, labels & zones. The integration doesn't create it.
 2. Add that label to each script, scene or automation that may be used as a step. Items without the label aren't offered and don't run.
@@ -58,20 +58,33 @@ routine: 0123456789abcdef0123456789abcdef
 The card shows the routine as a timeline. Steps before the alarm are above the word Alarm, and steps at or after it are below.
 
 - **The switch at the top** turns the whole routine on or off.
-- **+ Add a step** opens a form. Choose what should happen, and how many minutes before or after the alarm. A step can be up to 720 minutes before the alarm and up to 60 minutes after it.
-- **Tap a step's name** to change its time, change what it runs, or remove it.
+- **+ Add a step** opens a form. Choose what should happen, and how many minutes before or after the alarm. A step can be up to 720 minutes before the alarm and up to 60 minutes after it. The search box narrows the list.
+- **Tap a step's name** to change its time, change what it does, or remove it.
 - **The switch beside a step** turns that one step off without removing it.
 - **Skip next alarm** and **Clock to watch** work the same as the entities above.
 
-Each step runs once per alarm. Each script, scene or automation can be a step once per routine.
+Each step runs once per alarm.
 
-If something needs attention, the card says so in a sentence. For example, it says when no clock is chosen, or when a step's script was deleted or lost the label.
+### What a step can be
+
+- **A light.** Turn it on or off. Turning on can set a brightness from 1 to 100 percent if the light dims. Leave it empty and the light comes on as it was last.
+- **A thermostat with one temperature,** such as a heater. Turn it on or off. Turning on can set a temperature. Leave it empty and it starts at its last setting.
+- **A thermostat with a "heat to" and a "cool to" temperature.** The step sets both. It doesn't turn the thermostat on or off. In heat mode only "heat to" is used, and in cool mode only "cool to". If the thermostat is off, the step fails and changes nothing.
+- **A script, scene or automation** that has the "morning routine" label. Each can be a step once per routine.
+
+Lights and thermostats need no label, and any logged-in account can add them. A light or thermostat can be a step more than once, for example on before the alarm and off after it.
+
+A step never puts a setting back. A temperature or a light stays as the step left it until something else changes it.
+
+Other device types, such as switches, locks and garage doors, can't be steps. Put those in a script and give the script the label.
+
+If something needs attention, the card says so in a sentence. For example, it says when no clock is chosen, or when a step's script or device was deleted.
 
 If the card doesn't appear in the card list after an update, refresh the browser, or close and reopen the Home Assistant app.
 
 ## For admins and scripts
 
-The action `morning_routine.set_steps` replaces all the steps of one routine. Only an admin can call it. The card doesn't need it, and it may be removed in a later version.
+The action `morning_routine.set_steps` replaces all the steps of one routine. Only an admin can call it. The card doesn't need it.
 
 ```yaml
 action: morning_routine.set_steps
@@ -83,10 +96,21 @@ data:
     - item: scene.kitchen_lights_dim
       offset_minutes: 0
       enabled: false
+    - item: light.bedside_lamp
+      offset_minutes: -10
+      action: turn_on
+      brightness: 30
+    - item: climate.hallway
+      offset_minutes: -5
+      action: set_temperature
+      heat_to: 68
+      cool_to: 74
 ```
 
 - `offset_minutes` is the time from the alarm, from -720 to 60. A negative number is before the alarm.
 - `enabled` is optional and defaults to true.
+- A light or thermostat step needs an `action`: `turn_on`, `turn_off` or `set_temperature`. `turn_on` may have `brightness` for a light or `temperature` for a thermostat. `set_temperature` needs `heat_to` and `cool_to`.
+- A light or thermostat step gets an `id` the first time it is saved. A list sent without ids keeps them, matched by item and action.
 - If any step is refused, nothing changes.
 
 ## How it decides
@@ -108,6 +132,7 @@ data:
 - **Scripts with input fields.** These aren't supported as steps, because a step passes no values.
 - **Moving an alarm earlier.** That counts as a different alarm, so a step that already ran can run again.
 - **Renaming entities.** Renaming the phone's next alarm sensor or location entity breaks the routine. Remove the routine and add it again.
+- **A thermostat step that half works.** Turning a thermostat on and setting its temperature are two actions. If the second fails, the thermostat is on at its old temperature and the step is recorded as `failed`.
 - **Shared scripts.** A script in `single` mode that is already running ignores a new start, but the step is still recorded as `started`.
 - **Automation results.** An automation step reports `started` only when the automation finishes, so results can arrive late and out of order.
 
