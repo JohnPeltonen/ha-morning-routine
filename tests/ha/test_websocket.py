@@ -213,13 +213,12 @@ async def test_two_subscribers_both_hear_a_change(hass, loaded, labeled_script, 
 
 async def test_view_is_sent_again_when_an_item_gains_the_label(hass, loaded, add_item, member_client):
     first = await subscribe(member_client, loaded.entry_id)
-    assert first["items"] == [] and "no_label" in first["problems"]
+    assert first["items"] == []
 
     added = add_item("scene.wake_up")
 
     event = await event_where(member_client, lambda event: event["view"]["items"])
     assert event["view"]["items"][0]["item"] == added
-    assert "no_label" not in event["view"]["problems"]
 
 
 async def test_subscriber_is_told_when_the_routine_unloads(hass, loaded, member_client):

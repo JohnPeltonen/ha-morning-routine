@@ -16,7 +16,8 @@ async def test_view_of_a_new_routine(hass, loaded):
     assert (view["is_on"], view["skip_next"], view["clock"]) == (False, False, None)
     assert view["clock_options"] == [{"package": GOOGLE_CLOCK, "name": "Google Clock"}]
     assert view["steps"] == [] and view["items"] == []
-    assert view["problems"] == ["no_label", "no_clock"]
+    assert view["problems"] == ["no_clock"]
+    assert view["temperature_unit"] == "°C"
     assert (view["min_offset_minutes"], view["max_offset_minutes"]) == (-720, 60)
 
 
@@ -31,10 +32,25 @@ async def test_view_lists_steps_and_labeled_items_by_name(hass, loaded, add_item
     view = build_view(hass, loaded)
 
     assert view["steps"] == [
-        {"item": zebra, "name": "Zebra", "offset_minutes": -30, "enabled": True, "available": True}
+        {
+            "id": zebra,
+            "item": zebra,
+            "name": "Zebra",
+            "offset_minutes": -30,
+            "enabled": True,
+            "available": True,
+            "type": "run",
+            "action": "run",
+            "brightness": None,
+            "temperature": None,
+            "heat_to": None,
+            "cool_to": None,
+        }
     ]
-    assert view["items"] == [{"item": apple, "name": "Apple"}, {"item": zebra, "name": "Zebra"}]
-    assert "no_label" not in view["problems"]
+    assert view["items"] == [
+        {"item": apple, "name": "Apple", "type": "run"},
+        {"item": zebra, "name": "Zebra", "type": "run"},
+    ]
 
 
 async def test_view_marks_a_step_whose_item_lost_its_label(hass, loaded, labeled_script):
@@ -63,7 +79,9 @@ async def test_view_marks_a_step_whose_item_was_deleted(hass, loaded, labeled_sc
 async def test_view_names_an_item_without_a_state_from_the_registry(hass, loaded, labeled_script):
     er.async_get(hass).async_update_entity(labeled_script, name="Start the heater")
 
-    assert build_view(hass, loaded)["items"] == [{"item": labeled_script, "name": "Start the heater"}]
+    assert build_view(hass, loaded)["items"] == [
+        {"item": labeled_script, "name": "Start the heater", "type": "run"}
+    ]
 
 
 async def test_view_says_the_sensor_is_missing_when_it_is_disabled(hass, loaded, phone):
@@ -84,7 +102,7 @@ async def test_view_does_not_call_an_unavailable_sensor_a_problem(hass, loaded, 
     hass.states.async_set(phone.sensor_id, "unavailable")
     await hass.async_block_till_done()
 
-    assert build_view(hass, loaded)["problems"] == ["no_label", "no_clock"]
+    assert build_view(hass, loaded)["problems"] == ["no_clock"]
 
 
 async def test_view_says_the_sensor_is_stale_after_90_minutes(hass, freezer, loaded, phone):
@@ -102,3 +120,87 @@ async def test_view_has_no_clock_problem_once_a_clock_is_chosen(hass, loaded):
 
     assert view["clock"] == GOOGLE_CLOCK
     assert "no_clock" not in view["problems"]
+
+
+async def test_a_missing_label_is_not_a_problem(hass, loaded):
+    assert "no_label" not in build_view(hass, loaded)["problems"]
+
+
+async def test_view_offers_lights_and_thermostats_without_a_label(hass, loaded, lamp, heater, hall, add_item):
+    script = add_item("script.wake")
+    hass.states.async_set(script, "off", {"friendly_name": "Good morning"})
+    hass.states.async_set("switch.pump", "off", {"friendly_name": "Pump"})
+
+    assert build_view(hass, loaded)["items"] == [
+        {"item": script, "name": "Good morning", "type": "run"},
+        {"item": hall, "name": "Hall", "type": "thermostat_range", "actions": ["set_temperature"], "min_temp": 45, "max_temp": 95},
+        {
+            "item": heater,
+            "name": "Heater",
+            "type": "thermostat",
+            "actions": ["turn_on", "turn_off"],
+            "temperature": True,
+            "min_temp": 86,
+            "max_temp": 125,
+        },
+        {"item": lamp, "name": "Lamp", "type": "light", "actions": ["turn_on", "turn_off"], "brightness": True},
+    ]
+
+
+async def test_view_leaves_out_hidden_and_unavailable_devices(hass, loaded, lamp):
+    hidden = er.async_get(hass).async_get_or_create("light", "test", "hidden", suggested_object_id="hidden")
+    er.async_get(hass).async_update_entity(hidden.entity_id, hidden_by=er.RegistryEntryHider.USER)
+    hass.states.async_set(hidden.entity_id, "off", {"supported_color_modes": ["onoff"]})
+    hass.states.async_set("light.offline", "unavailable")
+
+    assert [item["item"] for item in build_view(hass, loaded)["items"]] == [lamp]
+
+
+async def test_view_shows_a_device_step_with_its_action_and_settings(hass, loaded, lamp, hall):
+    await loaded.runtime_data.async_set_steps(
+        [
+            Step(lamp, -10, True, id="a", action="turn_on", brightness=40),
+            Step(hall, -5, False, id="b", action="set_temperature", heat_to=68, cool_to=74),
+        ]
+    )
+
+    first, second = build_view(hass, loaded)["steps"]
+
+    assert first == {
+        "id": "a",
+        "item": lamp,
+        "name": "Lamp",
+        "offset_minutes": -10,
+        "enabled": True,
+        "available": True,
+        "type": "light",
+        "action": "turn_on",
+        "brightness": 40,
+        "temperature": None,
+        "heat_to": None,
+        "cool_to": None,
+    }
+    assert (second["type"], second["action"], second["heat_to"], second["cool_to"]) == (
+        "thermostat_range",
+        "set_temperature",
+        68,
+        74,
+    )
+
+
+async def test_view_marks_a_device_step_whose_device_is_gone(hass, loaded, lamp):
+    await loaded.runtime_data.async_set_steps([Step(lamp, -10, True, id="a", action="turn_on")])
+    hass.states.async_remove(lamp)
+
+    step = build_view(hass, loaded)["steps"][0]
+
+    assert (step["available"], step["type"], step["name"]) == (False, None, lamp)
+
+
+async def test_view_keeps_an_unavailable_device_step_available(hass, loaded, lamp):
+    await loaded.runtime_data.async_set_steps([Step(lamp, -10, True, id="a", action="turn_on")])
+    hass.states.async_set(lamp, "unavailable", {"friendly_name": "Lamp"})
+
+    step = build_view(hass, loaded)["steps"][0]
+
+    assert (step["available"], step["type"]) == (True, None)
