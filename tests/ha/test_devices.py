@@ -149,3 +149,11 @@ async def test_range_step_fails_when_the_thermostat_is_gone(hass):
 
     with pytest.raises(HomeAssistantError):
         device_calls(hass, step)
+
+
+@pytest.mark.parametrize(("mode", "sent"), [("heat", 68), ("cool", 74)])
+async def test_range_step_in_heat_or_cool_mode_sends_one_number_even_when_both_are_shown(hass, mode, sent):
+    set_hall(hass, mode, low=65, high=72)
+    step = Step(HALL, 0, id="a", action="set_temperature", heat_to=68, cool_to=74)
+
+    assert device_calls(hass, step) == [("climate", "set_temperature", {"entity_id": HALL, "temperature": sent})]

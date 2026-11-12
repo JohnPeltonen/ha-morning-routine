@@ -79,10 +79,12 @@ def _range_settings(hass: HomeAssistant, step: Step) -> dict[str, float | None]:
         state.attributes.get("target_temp_low") is not None
         and state.attributes.get("target_temp_high") is not None
     )
-    if state.state == "heat_cool" or shows_range:
-        return {"target_temp_low": step.heat_to, "target_temp_high": step.cool_to}
     if state.state == "cool":
         return {"temperature": step.cool_to}
-    if state.state in ("heat", "auto"):
+    if state.state == "heat":
+        return {"temperature": step.heat_to}
+    if state.state == "heat_cool" or shows_range:
+        return {"target_temp_low": step.heat_to, "target_temp_high": step.cool_to}
+    if state.state == "auto":
         return {"temperature": step.heat_to}
     raise HomeAssistantError(f"{step.item} is in {state.state} mode, which takes no temperature")

@@ -398,3 +398,21 @@ test("chosenItem chooses nothing when the choice is gone, and never another item
   assert.equal(chosenItem([{ item: "script.a" }], "script.b"), "");
   assert.equal(chosenItem([{ item: "script.a" }], ""), "");
 });
+
+test("withSaved changes only the edited step when one light is two steps", () => {
+  const view = viewOf([lampStep("a", -30, { brightness: 10 }), lampStep("b", 0, { brightness: 100 })]);
+  assert.deepEqual(
+    withSaved(view, "b", { item: "light.lamp", offset_minutes: 5, action: "turn_on", brightness: 90 }),
+    [
+      { id: "a", item: "light.lamp", offset_minutes: -30, enabled: true, action: "turn_on", brightness: 10 },
+      { id: "b", item: "light.lamp", offset_minutes: 5, action: "turn_on", brightness: 90, enabled: true },
+    ],
+  );
+});
+
+test("withSaved drops the id when only the item changes", () => {
+  const view = viewOf([lampStep("a", -30)]);
+  assert.deepEqual(withSaved(view, "a", { item: "light.plain", offset_minutes: -30, action: "turn_on" }), [
+    { item: "light.plain", offset_minutes: -30, action: "turn_on", enabled: true },
+  ]);
+});

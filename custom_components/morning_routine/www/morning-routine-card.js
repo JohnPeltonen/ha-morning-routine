@@ -699,6 +699,10 @@ if (globalThis.customElements) {
         autocomplete: "off",
         placeholder: "Search",
         "aria-label": "Search what should happen",
+        // Enter in a text box would submit the form, and searching must never save a step.
+        onkeydown: (event) => {
+          if (event.key === "Enter") event.preventDefault();
+        },
         oninput: () => this._fillFormItems(this._form.item.value),
       });
       const item = h("select", {

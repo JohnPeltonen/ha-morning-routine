@@ -40,6 +40,8 @@ def parse_steps(hass: HomeAssistant, raw: Any, existing: Sequence[Step] = ()) ->
     claimed = {
         entry["id"] for entry in raw if isinstance(entry, dict) and isinstance(entry.get("id"), str)
     }
+    kept_ids = _ids_of_unchanged_steps(raw, existing, claimed)
+    claimed |= set(kept_ids.values())
     steps: list[Step] = []
     seen: set[str] = set()
     keys: set[str] = set()
@@ -61,7 +63,7 @@ def parse_steps(hass: HomeAssistant, raw: Any, existing: Sequence[Step] = ()) ->
             # A script, scene or automation is always known by its item, so it has no id.
             extra: dict[str, Any] = {}
         elif domain in DEVICE_DOMAINS:
-            extra = _device_fields(hass, entry, number, existing, claimed | keys)
+            extra = _device_fields(hass, entry, number, existing, claimed | keys, kept_ids.get(index))
         else:
             raise refuse("item_not_allowed", item=name)
         if type(offset) is not int or not MIN_OFFSET_MINUTES <= offset <= MAX_OFFSET_MINUTES:
@@ -81,17 +83,45 @@ def _is_number(value: Any) -> bool:
     return type(value) in (int, float) and math.isfinite(value)
 
 
+def _ids_of_unchanged_steps(raw: list, existing: Sequence[Step], claimed: set[str]) -> dict[int, str]:
+    """For a list sent without ids: the id of each entry that is exactly a step the routine has now.
+
+    Found before anything else gets an id, so a changed or new entry can't take the id of a step
+    that is still in the list. Keyed by the entry's place in the list, counted from 1.
+    """
+    found: dict[int, str] = {}
+    used = set(claimed)
+    for index, entry in enumerate(raw, start=1):
+        if not isinstance(entry, dict) or entry.get("id"):
+            continue
+        for step in existing:
+            if step.id and step.id not in used and _same_step(step, entry):
+                found[index] = step.id
+                used.add(step.id)
+                break
+    return found
+
+
+def _same_step(step: Step, entry: dict) -> bool:
+    return (
+        (step.item, step.action, step.offset_minutes)
+        == (entry.get("item"), entry.get("action"), entry.get("offset_minutes"))
+        and all(getattr(step, key) == entry.get(key) for key in STEP_SETTINGS)
+    )
+
+
 def _device_fields(
-    hass: HomeAssistant, entry: dict, number: str, existing: Sequence[Step], taken: set[str]
+    hass: HomeAssistant, entry: dict, number: str, existing: Sequence[Step], taken: set[str], kept_id: str | None
 ) -> dict[str, Any]:
-    name, action, step_id = entry["item"], entry.get("action"), entry.get("id") or ""
+    name, action, step_id = entry["item"], entry.get("action"), entry.get("id") or kept_id or ""
     if not isinstance(action, str) or not isinstance(step_id, str) or len(step_id) > MAX_ID_LENGTH:
         raise refuse("invalid_step", number=number)
     settings = {key: entry.get(key) for key in STEP_SETTINGS}
     if any(value is not None and not _is_number(value) for value in settings.values()):
         raise refuse("invalid_step", number=number)
     if not step_id:
-        # A list sent without ids keeps the ids it had, so a step that already ran isn't seen as new.
+        # A changed step in a list sent without ids takes the id of a step for the same device and
+        # action, so a step that already ran isn't seen as new.
         step_id = next(
             (
                 step.id

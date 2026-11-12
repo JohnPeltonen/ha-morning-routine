@@ -247,3 +247,25 @@ async def test_a_refusal_over_websocket_carries_a_plain_sentence(hass, loaded, l
 
     assert not result["success"]
     assert result["error"]["message"].startswith("Brightness must be a whole number from 1 to 100")
+
+
+async def test_a_list_sent_in_another_order_without_ids_keeps_each_steps_own_id(hass, loaded, lamp):
+    dim = {"item": lamp, "offset_minutes": -30, "action": "turn_on", "brightness": 10}
+    bright = {"item": lamp, "offset_minutes": 0, "action": "turn_on", "brightness": 100}
+    await set_steps(hass, loaded.entry_id, [dim, bright])
+    ids = {step.brightness: step.id for step in loaded.runtime_data.steps}
+
+    await set_steps(hass, loaded.entry_id, [bright, dim])
+
+    assert {step.brightness: step.id for step in loaded.runtime_data.steps} == ids
+
+
+async def test_one_of_two_like_steps_sent_alone_without_an_id_keeps_its_own_id(hass, loaded, lamp):
+    dim = {"item": lamp, "offset_minutes": -30, "action": "turn_on", "brightness": 10}
+    bright = {"item": lamp, "offset_minutes": 0, "action": "turn_on", "brightness": 100}
+    await set_steps(hass, loaded.entry_id, [dim, bright])
+    bright_id = loaded.runtime_data.steps[1].id
+
+    await set_steps(hass, loaded.entry_id, [bright])
+
+    assert [step.id for step in loaded.runtime_data.steps] == [bright_id]
