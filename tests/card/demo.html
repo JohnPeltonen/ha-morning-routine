@@ -65,19 +65,51 @@
       );
 
       const ITEMS = [
-        { item: "scene.kitchen_lights_dim", name: "Kitchen lights dim" },
-        { item: "script.open_the_blinds", name: "Open the blinds" },
-        { item: "script.play_the_radio", name: "Play the radio" },
-        { item: "script.start_the_heater", name: "Start the heater" },
+        { item: "light.bedside_lamp", name: "Bedside lamp", type: "light", actions: ["turn_on", "turn_off"], brightness: true },
+        { item: "light.porch", name: "Porch light", type: "light", actions: ["turn_on", "turn_off"], brightness: false },
+        {
+          item: "climate.bathroom_heater",
+          name: "Bathroom heater",
+          type: "thermostat",
+          actions: ["turn_on", "turn_off"],
+          temperature: true,
+          min_temp: 50,
+          max_temp: 90,
+        },
+        {
+          item: "climate.hallway",
+          name: "Hallway thermostat",
+          type: "thermostat_range",
+          actions: ["set_temperature"],
+          min_temp: 45,
+          max_temp: 95,
+        },
+        { item: "scene.kitchen_lights_dim", name: "Kitchen lights dim", type: "run" },
+        { item: "script.open_the_blinds", name: "Open the blinds", type: "run" },
+        { item: "script.play_the_radio", name: "Play the radio", type: "run" },
+        { item: "script.start_the_heater", name: "Start the heater", type: "run" },
       ];
-      const name = (item) => (ITEMS.find((entry) => entry.item === item) || { name: item }).name;
-      const step = (item, offset_minutes, enabled = true, available = true) => ({
-        item,
-        name: name(item),
-        offset_minutes,
-        enabled,
-        available,
-      });
+      const found = (item) => ITEMS.find((entry) => entry.item === item) || { name: item, type: null };
+      let nextId = 1;
+      // A step as the server's view sends it. `extra` holds an id, an action and settings.
+      const step = (item, offset_minutes, enabled = true, available = true, extra = {}) => {
+        const entry = found(item);
+        const isRun = entry.type === "run" || (!extra.action && !entry.type);
+        return {
+          id: isRun ? item : extra.id || `id${nextId++}`,
+          item,
+          name: entry.name,
+          offset_minutes,
+          enabled,
+          available,
+          type: entry.type,
+          action: isRun ? "run" : extra.action,
+          brightness: extra.brightness ?? null,
+          temperature: extra.temperature ?? null,
+          heat_to: extra.heat_to ?? null,
+          cool_to: extra.cool_to ?? null,
+        };
+      };
       const baseView = () => ({
         entry_id: "demo",
         title: "Sam's morning routine",
@@ -94,6 +126,7 @@
           step("scene.kitchen_lights_dim", 0, false),
         ],
         items: ITEMS.map((entry) => ({ ...entry })),
+        temperature_unit: "°F",
         problems: [],
         min_offset_minutes: -720,
         max_offset_minutes: 60,
@@ -135,8 +168,8 @@
           }
           if (message.type === "morning_routine/set_steps") {
             this.view.steps = message.steps.map((entry) => {
-              const before = this.view.steps.find((old) => old.item === entry.item);
-              return step(entry.item, entry.offset_minutes, entry.enabled, before ? before.available : true);
+              const before = this.view.steps.find((old) => old.id === entry.id);
+              return step(entry.item, entry.offset_minutes, entry.enabled, before ? before.available : true, entry);
             });
           } else {
             for (const key of ["is_on", "skip_next", "clock"]) {
@@ -166,11 +199,33 @@
 
       const cases = {
         "Three steps": () => reset(),
-        "No label yet": () =>
+        "Nothing to add at all": () =>
           reset((view) => {
             view.steps = [];
             view.items = [];
-            view.problems = ["no_label"];
+          }),
+        "No labelled items": () =>
+          reset((view) => {
+            view.steps = [];
+            view.items = view.items.filter((entry) => entry.type !== "run");
+          }),
+        "Device steps": () =>
+          reset((view) => {
+            view.steps = [
+              step("climate.bathroom_heater", -25, true, true, { id: "heat", action: "turn_on", temperature: 72 }),
+              step("light.bedside_lamp", -10, true, true, { id: "on", action: "turn_on", brightness: 30 }),
+              step("climate.hallway", -5, true, true, { id: "hall", action: "set_temperature", heat_to: 68, cool_to: 74 }),
+              step("script.play_the_radio", 0),
+              step("light.bedside_lamp", 45, false, true, { id: "off", action: "turn_off" }),
+            ];
+          }),
+        "A device that's gone": () =>
+          reset((view) => {
+            view.steps = [
+              { ...step("light.bedside_lamp", -10, true, false, { id: "on", action: "turn_on", brightness: 30 }), type: null },
+              step("script.play_the_radio", 0),
+            ];
+            view.items = view.items.filter((entry) => entry.item !== "light.bedside_lamp");
           }),
         Problems: () =>
           reset((view) => {
@@ -211,7 +266,9 @@
         },
         "Nothing left to add": () =>
           reset((view) => {
-            view.items = view.items.filter((entry) => view.steps.some((used) => used.item === entry.item));
+            view.items = view.items.filter(
+              (entry) => entry.type === "run" && view.steps.some((used) => used.item === entry.item),
+            );
           }),
         "No routine chosen": () => card.setConfig({ type: "custom:morning-routine-card", routine: "" }),
         "Routine chosen again": () => card.setConfig({ type: "custom:morning-routine-card", routine: "demo" }),

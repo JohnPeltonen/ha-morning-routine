@@ -3,14 +3,21 @@
 // The element that draws the card is at the bottom.
 
 const PROBLEM_TEXT = {
-  no_label:
-    'An admin needs to create a label named "morning routine" and add it to each script, scene or automation this routine may run.',
   sensor_missing:
     "This phone's Next alarm sensor is turned off or missing. Turn it on in the Home Assistant Android app, under Settings, Companion app, Manage sensors.",
   sensor_stale:
     "The phone is reporting an alarm time that has already passed. This usually means the Next alarm sensor's Allow list is on. Turn the Allow list off in the Home Assistant Android app.",
   no_clock: "Choose a clock below. Nothing runs until one is chosen.",
 };
+
+const GROUPS = [
+  { title: "Lights", types: ["light"] },
+  { title: "Thermostats", types: ["thermostat", "thermostat_range"] },
+  { title: "Scripts, scenes and automations", types: ["run"] },
+];
+const ACTION_TEXT = { turn_on: "Turn on", turn_off: "Turn off", set_temperature: "Set temperatures" };
+const SETTINGS = ["brightness", "temperature", "heat_to", "cool_to"];
+const isSet = (value) => value !== null && value !== undefined;
 
 export function offsetLabel(offsetMinutes) {
   if (offsetMinutes === 0) return "At alarm";
@@ -70,43 +77,157 @@ export function offsetError(text, direction, view) {
   return null;
 }
 
-export function formItems(view, editingItem) {
-  const usedByOthers = new Set(view.steps.map((step) => step.item).filter((item) => item !== editingItem));
-  const items = view.items.filter((entry) => !usedByOthers.has(entry.item));
-  if (editingItem !== null && !items.some((entry) => entry.item === editingItem)) {
-    const own = view.steps.find((step) => step.item === editingItem);
-    if (own) items.unshift({ item: own.item, name: own.name });
+// What a light or thermostat step does, in words. Empty for a script, scene or automation.
+export function stepDetail(step, unit) {
+  const degrees = (value) => `${value}${unit || "°"}`;
+  if (step.action === "turn_off") return "Turn off";
+  if (step.action === "turn_on") {
+    if (isSet(step.brightness)) return `Turn on at ${step.brightness}%`;
+    if (isSet(step.temperature)) return `Turn on at ${degrees(step.temperature)}`;
+    return "Turn on";
+  }
+  if (step.action === "set_temperature") {
+    return `Heat to ${degrees(step.heat_to)}, cool to ${degrees(step.cool_to)}`;
+  }
+  return "";
+}
+
+// What the form's picker offers. A script, scene or automation can be a step once, so one that
+// another step uses is left out. A light or thermostat can be a step any number of times.
+export function formItems(view, editingId) {
+  const editing = view.steps.find((step) => step.id === editingId) || null;
+  const usedByOthers = new Set(
+    view.steps.filter((step) => step.action === "run" && step.id !== editingId).map((step) => step.item),
+  );
+  const items = view.items.filter((entry) => !(entry.type === "run" && usedByOthers.has(entry.item)));
+  if (editing && !items.some((entry) => entry.item === editing.item)) {
+    items.unshift({ item: editing.item, name: editing.name, type: editing.type });
   }
   return items;
 }
 
-// Which item the form's picker shows. `selected` is null for a form that was just opened.
+// Which item the form's picker shows. `selected` is null for a form that starts on its first item.
 // A choice that is no longer offered becomes no choice, never a different item.
 export function chosenItem(items, selected) {
   if (selected === null) return items.length ? items[0].item : "";
   return items.some((entry) => entry.item === selected) ? selected : "";
 }
 
-function wireSteps(view) {
-  return view.steps.map((step) => ({
+// The items whose name has every word that was typed. The chosen item always stays.
+export function searchItems(items, text, keepItem) {
+  const words = String(text).toLowerCase().split(/\s+/).filter(Boolean);
+  return items.filter((entry) => {
+    if (entry.item === keepItem) return true;
+    const name = entry.name.toLowerCase();
+    return words.every((word) => name.includes(word));
+  });
+}
+
+// The picker's groups, in a fixed order. An item of no known type comes first, with no title.
+export function itemGroups(items) {
+  const known = new Set(GROUPS.flatMap((group) => group.types));
+  const groups = [{ title: "", items: items.filter((entry) => !known.has(entry.type)) }];
+  for (const group of GROUPS) {
+    groups.push({ title: group.title, items: items.filter((entry) => group.types.includes(entry.type)) });
+  }
+  return groups.filter((group) => group.items.length);
+}
+
+export function actionChoices(entry) {
+  return ((entry && entry.actions) || []).map((action) => ({ action, text: ACTION_TEXT[action] || action }));
+}
+
+// Which setting boxes the form shows for this item and action.
+export function settingFields(entry, action) {
+  if (!entry) return [];
+  if (action === "set_temperature") return ["heat_to", "cool_to"];
+  if (action === "turn_on" && entry.type === "light" && entry.brightness) return ["brightness"];
+  if (action === "turn_on" && entry.type === "thermostat" && entry.temperature) return ["temperature"];
+  return [];
+}
+
+function temperatureProblem(text, entry) {
+  if (!/^-?\d+(\.\d+)?$/.test(text)) return true;
+  const value = Number(text);
+  return (isSet(entry.min_temp) && value < entry.min_temp) || (isSet(entry.max_temp) && value > entry.max_temp);
+}
+
+function temperatureRange(entry) {
+  return isSet(entry.min_temp) && isSet(entry.max_temp) ? ` from ${entry.min_temp} to ${entry.max_temp}` : "";
+}
+
+// `fields` holds what was typed in each box, as text. Returns a sentence, or null when all is well.
+export function settingsError(entry, action, fields) {
+  const typed = (name) => String(fields[name] ?? "").trim();
+  for (const name of settingFields(entry, action)) {
+    const text = typed(name);
+    if (name === "brightness") {
+      if (text === "") continue;
+      if (!/^\d+$/.test(text) || Number(text) < 1 || Number(text) > 100) {
+        return "Enter a brightness from 1 to 100, or leave it empty.";
+      }
+    } else if (name === "temperature") {
+      if (text === "") continue;
+      if (temperatureProblem(text, entry)) {
+        return `Enter a temperature${temperatureRange(entry)}, or leave it empty.`;
+      }
+    } else if (temperatureProblem(text, entry)) {
+      return `Enter a temperature${temperatureRange(entry)} in both boxes.`;
+    }
+  }
+  if (action === "set_temperature" && Number(typed("heat_to")) >= Number(typed("cool_to"))) {
+    return '"Heat to" must be lower than "Cool to".';
+  }
+  return null;
+}
+
+// The settings as numbers, for a form that settingsError has passed.
+export function settingsOf(entry, action, fields) {
+  const settings = {};
+  for (const name of settingFields(entry, action)) {
+    const text = String(fields[name] ?? "").trim();
+    if (text !== "") settings[name] = Number(text);
+  }
+  return settings;
+}
+
+function wireStep(step) {
+  const wire = {
+    id: step.id,
     item: step.item,
     offset_minutes: step.offset_minutes,
     enabled: step.enabled,
-  }));
+    action: step.action,
+  };
+  for (const name of SETTINGS) {
+    if (isSet(step[name])) wire[name] = step[name];
+  }
+  return wire;
 }
 
-export function withToggled(view, item, enabled) {
-  return wireSteps(view).map((step) => (step.item === item ? { ...step, enabled } : step));
+function wireSteps(view) {
+  return view.steps.map(wireStep);
 }
 
-export function withSaved(view, editingItem, { item, offset_minutes }) {
+export function withToggled(view, id, enabled) {
+  return wireSteps(view).map((step) => (step.id === id ? { ...step, enabled } : step));
+}
+
+// `step` is what the form holds: item, offset_minutes, action and any settings.
+export function withSaved(view, editingId, step) {
   const steps = wireSteps(view);
-  if (editingItem === null) return [...steps, { item, offset_minutes, enabled: true }];
-  return steps.map((step) => (step.item === editingItem ? { item, offset_minutes, enabled: step.enabled } : step));
+  if (editingId === null) return [...steps, { ...step, enabled: true }];
+  return steps.map((old) => {
+    if (old.id !== editingId) return old;
+    // A step that now does something else is a new step. The server gives it a new id,
+    // so having run under the old one this morning doesn't hold it back.
+    const same = old.item === step.item && old.action === step.action;
+    return same ? { id: old.id, ...step, enabled: old.enabled } : { ...step, enabled: old.enabled };
+  });
 }
 
-export function withRemoved(view, item) {
-  return wireSteps(view).filter((step) => step.item !== item);
+export function withRemoved(view, id) {
+  return wireSteps(view).filter((step) => step.id !== id);
 }
 
 export function problemText(code) {
@@ -124,8 +245,17 @@ if (globalThis.customElements) {
   const TEXT_NO_ROUTINE = "Choose a routine in this card's settings.";
   const TEXT_UNAVAILABLE = "This routine isn't available. It may have been removed.";
   const TEXT_STEP_GONE = 'No longer available. It was deleted or lost the "morning routine" label.';
+  const TEXT_DEVICE_GONE = "No longer available. It was deleted.";
   const TEXT_NOTHING_TO_ADD =
-    'Nothing else has the "morning routine" label. An admin can add the label to a script, scene or automation.';
+    'There is nothing to add yet. A step can be a light, a thermostat, or a script, scene or automation that an admin gave the "morning routine" label.';
+  const TEXT_LABEL_NOTE =
+    'Scripts, scenes and automations appear here once an admin gives them the "morning routine" label.';
+  const FIELD_TEXT = {
+    brightness: { label: "Brightness", hint: "as it was", unit: () => "%" },
+    temperature: { label: "Temperature", hint: "last setting", unit: (view) => view.temperature_unit || "" },
+    heat_to: { label: "Heat to", hint: "", unit: (view) => view.temperature_unit || "" },
+    cool_to: { label: "Cool to", hint: "", unit: (view) => view.temperature_unit || "" },
+  };
   const TEXT_NOT_SAVED = "That change couldn't be saved.";
   const TEXT_CHOICE_GONE = "That choice is no longer available. Choose again.";
 
@@ -158,9 +288,11 @@ if (globalThis.customElements) {
     .text-button:disabled { opacity: 0.5; cursor: default; }
     .add { display: block; margin: 2px auto 0; }
     .label { display: block; color: var(--secondary-text-color); font-size: 12.5px; margin: 12px 0 6px; }
-    select, input.minutes { font: inherit; color: var(--primary-text-color); background: var(--card-background-color); border: 1px solid var(--divider-color); border-bottom-color: var(--secondary-text-color); border-radius: 4px 4px 0 0; padding: 9px 10px; box-sizing: border-box; min-width: 0; }
+    select, input.minutes, input.search { font: inherit; color: var(--primary-text-color); background: var(--card-background-color); border: 1px solid var(--divider-color); border-bottom-color: var(--secondary-text-color); border-radius: 4px 4px 0 0; padding: 9px 10px; box-sizing: border-box; min-width: 0; }
     select.wide { width: 100%; }
     input.minutes { width: 64px; }
+    input.search { width: 100%; margin-bottom: 6px; }
+    .setting-row { display: flex; align-items: center; gap: 8px; }
     select:disabled { opacity: 0.5; }
     input.switch { appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 36px; height: 20px; margin: 0; border-radius: 10px; cursor: pointer; background: color-mix(in srgb, var(--secondary-text-color) 55%, transparent); transition: background 0.15s; }
     input.switch::before { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--card-background-color); box-shadow: 0 0 2px rgba(0, 0, 0, 0.5); transition: left 0.15s; }
@@ -468,7 +600,7 @@ if (globalThis.customElements) {
             { type: "button", class: "text-button add", "data-key": "add", onclick: () => this._openForm(null) },
             "+ Add a step",
           ),
-        !canAdd && !view.problems.includes("no_label") && h("p", { class: "note" }, TEXT_NOTHING_TO_ADD),
+        !canAdd && h("p", { class: "note" }, TEXT_NOTHING_TO_ADD),
       );
     }
 
@@ -485,6 +617,7 @@ if (globalThis.customElements) {
 
     _stepRow(view, step, edge) {
       const state = !step.available ? " gone" : step.enabled ? "" : " off";
+      const detail = stepDetail(step, view.temperature_unit);
       return h(
         "div",
         { class: `step${edge}${state}` },
@@ -498,17 +631,18 @@ if (globalThis.customElements) {
             {
               type: "button",
               class: "name",
-              "data-key": `name:${step.item}`,
+              "data-key": `name:${step.id}`,
               "aria-label": `Edit step: ${step.name}`,
-              onclick: () => this._openForm(step.item),
+              onclick: () => this._openForm(step.id),
             },
             step.name,
           ),
-          !step.available && h("p", { class: "note" }, TEXT_STEP_GONE),
+          detail && h("p", { class: "note" }, detail),
+          !step.available && h("p", { class: "note" }, step.action === "run" ? TEXT_STEP_GONE : TEXT_DEVICE_GONE),
         ),
         step.available
-          ? this._switch(`step:${step.item}`, step.name, step.enabled, (enabled) =>
-              this._send({ type: "morning_routine/set_steps", steps: withToggled(this._view, step.item, enabled) }),
+          ? this._switch(`step:${step.id}`, detail ? `${step.name}: ${detail}` : step.name, step.enabled, (enabled) =>
+              this._send({ type: "morning_routine/set_steps", steps: withToggled(this._view, step.id, enabled) }),
             )
           : h("div"),
       );
@@ -552,14 +686,33 @@ if (globalThis.customElements) {
 
     // ----- The step form -----
 
-    _openForm(editingItem) {
+    _openForm(editingId) {
       const view = this._view;
       if (!view || this._busy) return;
-      const step = editingItem === null ? null : view.steps.find((entry) => entry.item === editingItem);
-      if (editingItem !== null && !step) return;
+      const step = editingId === null ? null : view.steps.find((entry) => entry.id === editingId);
+      if (editingId !== null && !step) return;
       const { minutes, direction } = step ? splitOffset(step.offset_minutes) : { minutes: 30, direction: "before" };
 
-      const item = h("select", { id: "form-item", class: "wide", onchange: () => this._syncFormButtons() });
+      const search = h("input", {
+        class: "search",
+        type: "search",
+        autocomplete: "off",
+        placeholder: "Search",
+        "aria-label": "Search what should happen",
+        oninput: () => this._fillFormItems(this._form.item.value),
+      });
+      const item = h("select", {
+        id: "form-item",
+        class: "wide",
+        // Without this the dialog opens on the search box, and a phone raises its keyboard.
+        autofocus: true,
+        onchange: () => {
+          this._fillFormSettings();
+          this._syncFormButtons();
+        },
+      });
+      const labelNote = h("p", { class: "note" });
+      const settings = h("div");
       const minutesBox = h("input", {
         id: "form-minutes",
         class: "minutes",
@@ -580,8 +733,24 @@ if (globalThis.customElements) {
       const remove =
         step && h("button", { type: "button", class: "text-button quiet", onclick: () => this._removeFromForm() }, "Remove step");
 
-      this._form = { editing: editingItem, item, minutesBox, directionBox, error, save, remove };
-      this._fillFormItems(step ? step.item : null);
+      this._form = {
+        editing: editingId,
+        search,
+        item,
+        labelNote,
+        settings,
+        settingsFor: null,
+        actionBox: null,
+        boxes: {},
+        minutesBox,
+        directionBox,
+        error,
+        save,
+        remove,
+      };
+      // A new step starts on "Choose one", so nothing is added by a stray tap on Save.
+      this._fillFormItems(step ? step.item : "");
+      this._fillFormSettings();
       this._dialog.replaceChildren(
         h(
           "form",
@@ -594,7 +763,10 @@ if (globalThis.customElements) {
           },
           h("div", { class: "title" }, step ? "Edit step" : "Add a step"),
           h("label", { class: "label", for: "form-item" }, "What should happen"),
+          search,
           item,
+          labelNote,
+          settings,
           h("label", { class: "label", for: "form-minutes" }, "When"),
           h("div", { class: "when-row" }, minutesBox, h("span", {}, "minutes"), directionBox),
           error,
@@ -616,22 +788,96 @@ if (globalThis.customElements) {
       const form = this._form;
       const items = formItems(this._view, form.editing);
       const keep = chosenItem(items, selected);
-      const options = items.map((entry) => h("option", { value: entry.item, selected: entry.item === keep }, entry.name));
+      const option = (entry) => h("option", { value: entry.item, selected: entry.item === keep }, entry.name);
+      const options = itemGroups(searchItems(items, form.search.value, keep)).map((group) =>
+        group.title ? h("optgroup", { label: group.title }, group.items.map(option)) : group.items.map(option),
+      );
       if (keep === "") options.unshift(h("option", { value: "", selected: true, disabled: true }, "Choose one"));
-      form.item.replaceChildren(...options);
+      form.item.replaceChildren(...options.flat());
+      form.labelNote.textContent = items.some((entry) => entry.type === "run") ? "" : TEXT_LABEL_NOTE;
       return keep;
+    }
+
+    // The item the picker is on, with what it can do. Null when nothing is chosen.
+    _formEntry() {
+      const form = this._form;
+      return formItems(this._view, form.editing).find((entry) => entry.item === form.item.value) || null;
+    }
+
+    _formAction(entry) {
+      const form = this._form;
+      const choices = actionChoices(entry);
+      if (!choices.length) return null;
+      if (form.actionBox && choices.some((choice) => choice.action === form.actionBox.value)) {
+        return form.actionBox.value;
+      }
+      return choices[0].action;
+    }
+
+    // Draws the action and its settings for the chosen item. Only redrawn when the item or the
+    // action changes, so what was typed survives a new view from the server.
+    _fillFormSettings() {
+      const form = this._form;
+      const view = this._view;
+      const entry = this._formEntry();
+      const own = form.editing === null ? null : view.steps.find((step) => step.id === form.editing) || null;
+      const choices = actionChoices(entry);
+      const startsOnOwn = own && entry && own.item === entry.item && form.settingsFor === null;
+      const action =
+        startsOnOwn && choices.some((choice) => choice.action === own.action) ? own.action : this._formAction(entry);
+      const key = entry ? `${entry.item}|${action}` : "";
+      if (key === form.settingsFor) return;
+      form.settingsFor = key;
+      form.actionBox = null;
+      form.boxes = {};
+      if (!choices.length) {
+        form.settings.replaceChildren();
+        return;
+      }
+      form.actionBox = h(
+        "select",
+        {
+          id: "form-action",
+          class: "wide",
+          onchange: () => this._fillFormSettings(),
+        },
+        choices.map((choice) => h("option", { value: choice.action, selected: choice.action === action }, choice.text)),
+      );
+      const rows = [h("label", { class: "label", for: "form-action" }, "What to do"), form.actionBox];
+      const prefill = own && own.item === entry.item && own.action === action ? own : {};
+      for (const name of settingFields(entry, action)) {
+        const text = FIELD_TEXT[name];
+        const value = prefill[name];
+        const box = h("input", {
+          id: `form-${name}`,
+          class: "minutes",
+          type: "text",
+          inputMode: "decimal",
+          autocomplete: "off",
+          placeholder: text.hint,
+          value: value === null || value === undefined ? "" : String(value),
+          "aria-describedby": "form-error",
+        });
+        form.boxes[name] = box;
+        rows.push(
+          h("label", { class: "label", for: `form-${name}` }, text.label),
+          h("div", { class: "setting-row" }, box, h("span", {}, text.unit(view))),
+        );
+      }
+      form.settings.replaceChildren(...rows);
     }
 
     _refreshForm() {
       const form = this._form;
       if (!form) return;
-      if (form.editing !== null && !this._view.steps.some((step) => step.item === form.editing)) {
+      if (form.editing !== null && !this._view.steps.some((step) => step.id === form.editing)) {
         // Someone else removed the step being edited.
         this._closeForm();
         return;
       }
       const before = form.item.value;
       if (this._fillFormItems(before) !== before) form.error.textContent = TEXT_CHOICE_GONE;
+      this._fillFormSettings();
       this._syncFormButtons();
     }
 
@@ -654,9 +900,31 @@ if (globalThis.customElements) {
       const problem = offsetError(form.minutesBox.value, direction, this._view);
       form.error.textContent = problem || "";
       if (problem) return;
+      const entry = this._formEntry();
+      const own = form.editing === null ? null : this._view.steps.find((step) => step.id === form.editing) || null;
+      let what;
+      if (entry && entry.type === "run") {
+        what = { action: "run" };
+      } else if (actionChoices(entry).length) {
+        const action = this._formAction(entry);
+        const fields = Object.fromEntries(Object.entries(form.boxes).map(([name, box]) => [name, box.value]));
+        const settingsProblem = settingsError(entry, action, fields);
+        form.error.textContent = settingsProblem || "";
+        if (settingsProblem) return;
+        what = { action, ...settingsOf(entry, action, fields) };
+      } else if (own && own.item === form.item.value) {
+        // The step's own device is gone, so only its time can change. What it does stays as it was.
+        what = { action: own.action };
+        for (const name of ["brightness", "temperature", "heat_to", "cool_to"]) {
+          if (own[name] !== null && own[name] !== undefined) what[name] = own[name];
+        }
+      } else {
+        return;
+      }
       const steps = withSaved(this._view, form.editing, {
         item: form.item.value,
         offset_minutes: joinOffset(Number(form.minutesBox.value.trim()), direction),
+        ...what,
       });
       const saved = await this._send({ type: "morning_routine/set_steps", steps }, (text) => {
         form.error.textContent = text;
