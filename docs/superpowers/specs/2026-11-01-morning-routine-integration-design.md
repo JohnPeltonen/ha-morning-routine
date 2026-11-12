@@ -45,7 +45,7 @@ These would make it a failure even if everything else worked.
 - **A brief glitch must not cost someone their morning.** The rule in "The home check" exists for this.
 - **A restart, reload or reconnect must not start anything by itself.**
 - **A step must not run twice for one alarm.**
-- **A non-admin user must not be able to reach every script in the house.** Only items with the label can be chosen. See "What a step can run".
+- **A non-admin user must not be able to reach every script in the house.** Only scripts, scenes and automations with the label can be chosen. Lights and thermostats can be chosen without it, which the owner decided on 2026-11-11. See "What a step can run".
 - **No red or alarm-style coloring in the card.** A skipped step or a phone that's away is information, not a warning.
 
 ## Constraints
@@ -197,13 +197,34 @@ A switch per routine, on the owner's approved card layout. It's tied to an alarm
 
 ### What a step can run
 
-- Scripts, scenes and automations that have a Home Assistant label named "morning routine". The owner chose this. Otherwise, "Everything Off" would be one tap away in a morning routine.
+A step does one of two things: it runs a script, scene or automation, or it changes a light or a thermostat directly.
+
+**Scripts, scenes and automations**
+
+- Only those that have a Home Assistant label named "morning routine". The owner chose this. Otherwise, "Everything Off" would be one tap away in a morning routine.
 - Scripts are started without waiting for them to finish. Automations are triggered, and scenes are turned on. Builder's call.
 - A script that needs input fields isn't supported.
-- **The check runs on the server,** not just in the card. A request naming an item without the label is refused.
-- If an item is later deleted or loses its label, the step stays on the list, doesn't run, and the card says so in plain words. Builder's call.
+- Each one can be a step once per routine.
+- If the label doesn't exist yet, the add-a-step form says that an admin can create it. The integration doesn't create it. The owner confirmed this.
+
+**Lights and thermostats**
+
+The owner asked for this on 2026-11-11. Any logged-in account can already switch a device on from a dashboard, so any logged-in account can also put one on a routine. No label and no admin setup is needed.
+
+- **A light** can be turned on or turned off. Turning on can carry a brightness from 1 to 100 percent if the light dims. Left empty, the light comes on as it was last. Colour isn't offered.
+- **A thermostat with one target temperature** can be turned on or turned off. This covers a heater as well as a simple house thermostat. Turning on can carry a temperature. Left empty, it starts at its last setting.
+- **A thermostat that takes a range** has a "heat to" and a "cool to" temperature. A step sets both. It doesn't turn the thermostat on or off. When the step runs, it sends the numbers that fit the thermostat's mode at that moment: both in heat-and-cool mode, only "heat to" in heat mode, and only "cool to" in cool mode. If the thermostat is off, the step fails and nothing changes. Builder's call.
+- **A step never puts a setting back.** Whatever changes the device next replaces it.
+- **A device can be in a routine more than once,** at different times or with different actions. This allows a light on before the alarm and off after it.
+- Temperatures are in the server's unit and are checked against the device's own lowest and highest setting.
+- **Other device types aren't offered.** Switches, fans and speakers may be added later. Locks, garage doors and alarm panels are left out on purpose. Builder's call.
+- Which type a device is comes from what it reports to Home Assistant, not from its name.
+
+**Both**
+
+- **The check runs on the server,** not just in the card. A request naming a script without the label, a device type that isn't offered, an action the device can't do, or a setting outside its range is refused.
+- If an item is later deleted, or a script loses its label, the step stays on the list, doesn't run, and the card says so in plain words. Builder's call.
 - If a step fails, log it, record it in diagnostics, and carry on with the other steps.
-- If the label doesn't exist yet, the card explains that an admin needs to create it. The integration doesn't create it. The owner confirmed this.
 
 ### Each step runs once per alarm
 
@@ -248,7 +269,8 @@ The owner chose this layout from mockups. **Everything is relative to the alarm.
 
 **The add-a-step form:**
 
-- What should happen: a dropdown of items with the label.
+- What should happen: a list of lights, thermostats, and the scripts, scenes and automations with the label. A search box narrows it, because a house can have hundreds of devices.
+- For a light or a thermostat: what to do (turn on, turn off, or set temperatures) and the setting that goes with it.
 - When: "At a time around the alarm" or "The next motion".
 - For a time: minutes before or after the alarm.
 - For motion: which sensor, and how long before the alarm to start watching.
@@ -289,7 +311,7 @@ One device per routine. Builder's call on the exact names.
 - Select: clock to watch.
 - Sensor, diagnostic: last ignored entry, with its time, package and reason as attributes.
 - Sensor, diagnostic: current alarm, a timestamp. It can be wrong while an alarm is hidden, so the card doesn't use it.
-- Event: `morning_routine_step_ran`, with the routine, step, item and result. Anything fancier than a step can trigger from this.
+- Event: `morning_routine_step_ran`, with the routine, step, item, action and result. Anything fancier than a step can trigger from this.
 
 Steps aren't entities. They're stored with `Store` and changed through the WebSocket commands.
 
@@ -315,7 +337,8 @@ The owner wants one routine running at home while the owner is away for a few da
 
 1. **Rules, settings and first install:** the repo tooling, the alarm rules with their tests, setup, entities, and running time steps with the home check. Steps are set by an admin through a temporary service until the card exists. The routine switch and the skip switch are ordinary entities, so a non-admin user can use them from a dashboard. Install on the owner's server and test with a harmless script before any real one. Installing needs a restart, so ask the owner first, take a backup, and coordinate with any other Claude session working on that server.
 2. **The card and motion steps:** the WebSocket commands, the card and its registration, and motion steps. The owner's house has no motion sensor that works while people are home, so motion steps wait until now.
-3. **Release:** check the card on a real phone, update the README and publish. The owner does all pushing.
+3. **Lights and thermostats as steps:** added 2026-11-11. See "What a step can run".
+4. **Release:** check the card on a real phone, update the README and publish. The owner does all pushing.
 
 **Not part of this repo:** the owner's scripts, the label on them, placing the card on the owner's dashboard, and a kitchen motion sensor that works while people are home. The owner's Blink cameras don't do this. Motion steps can't work in the owner's kitchen until there is one.
 
