@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Morning Routine card demo</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 12px;
+        background: #111;
+        color: #e1e1e1;
+        font: 14px Roboto, system-ui, sans-serif;
+        --primary-text-color: #e1e1e1;
+        --secondary-text-color: #9a9a9a;
+        --primary-color: #03a9f4;
+        --divider-color: #333;
+        --card-background-color: #1c1c1c;
+      }
+      #cases {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 12px;
+      }
+      #cases button {
+        font: inherit;
+        padding: 6px 8px;
+        color: inherit;
+        background: #2a2a2a;
+        border: 1px solid #444;
+        border-radius: 6px;
+      }
+      #holder {
+        max-width: 336px;
+      }
+      #log {
+        color: #9a9a9a;
+        font-size: 12px;
+        white-space: pre-wrap;
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- The card with a fake server, for looking at it in a browser. Names are made up.
+         Serve the repo root (python -m http.server) and open /tests/card/demo.html -->
+    <div id="cases"></div>
+    <div id="holder"></div>
+    <div id="log"></div>
+
+    <script type="module">
+      import "../../custom_components/morning_routine/www/morning-routine-card.js";
+
+      // Home Assistant supplies ha-card. This stand-in only draws the card's edge.
+      customElements.define(
+        "ha-card",
+        class extends HTMLElement {
+          constructor() {
+            super();
+            this.attachShadow({ mode: "open" }).innerHTML =
+              "<style>:host{display:block;background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:12px}</style><slot></slot>";
+          }
+        },
+      );
+
+      const ITEMS = [
+        { item: "scene.kitchen_lights_dim", name: "Kitchen lights dim" },
+        { item: "script.open_the_blinds", name: "Open the blinds" },
+        { item: "script.play_the_radio", name: "Play the radio" },
+        { item: "script.start_the_heater", name: "Start the heater" },
+      ];
+      const name = (item) => (ITEMS.find((entry) => entry.item === item) || { name: item }).name;
+      const step = (item, offset_minutes, enabled = true, available = true) => ({
+        item,
+        name: name(item),
+        offset_minutes,
+        enabled,
+        available,
+      });
+      const baseView = () => ({
+        entry_id: "demo",
+        title: "Sam's morning routine",
+        is_on: true,
+        skip_next: false,
+        clock: "com.example.clock",
+        clock_options: [
+          { package: "com.example.clock", name: "Example Clock" },
+          { package: "com.example.other", name: "Other Clock" },
+        ],
+        steps: [
+          step("script.start_the_heater", -30),
+          step("script.play_the_radio", -5),
+          step("scene.kitchen_lights_dim", 0, false),
+        ],
+        items: ITEMS.map((entry) => ({ ...entry })),
+        problems: [],
+        min_offset_minutes: -720,
+        max_offset_minutes: 60,
+      });
+
+      const log = (text) => {
+        document.getElementById("log").textContent = `${text}\n${document.getElementById("log").textContent}`.slice(0, 2000);
+      };
+
+      // A stand-in for Home Assistant's connection. It keeps one view and answers the three commands.
+      const server = {
+        view: baseView(),
+        gone: false,
+        refuse: false,
+        subscribers: new Set(),
+        addEventListener() {},
+        removeEventListener() {},
+        push() {
+          for (const callback of this.subscribers) callback({ view: structuredClone(this.view) });
+        },
+        async subscribeMessage(callback, message) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          if (this.gone) throw { code: "not_found", message: "This routine isn't available." };
+          this.subscribers.add(callback);
+          setTimeout(() => callback({ view: structuredClone(this.view) }), 0);
+          log(`subscribed (${message.type})`);
+          return async () => this.subscribers.delete(callback);
+        },
+        async sendMessagePromise(message) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          log(`command ${JSON.stringify(message)}`);
+          if (this.gone) throw { code: "not_found", message: "This routine isn't available." };
+          if (this.refuse) {
+            throw {
+              code: "home_assistant_error",
+              message:
+                'script.start_the_heater can\'t be a step. It must be a script, scene or automation that has the label "morning routine".',
+            };
+          }
+          if (message.type === "morning_routine/set_steps") {
+            this.view.steps = message.steps.map((entry) => {
+              const before = this.view.steps.find((old) => old.item === entry.item);
+              return step(entry.item, entry.offset_minutes, entry.enabled, before ? before.available : true);
+            });
+          } else {
+            for (const key of ["is_on", "skip_next", "clock"]) {
+              if (key in message) this.view[key] = message[key];
+            }
+            if ("clock" in message) this.view.problems = this.view.problems.filter((code) => code !== "no_clock");
+          }
+          this.push();
+          return null;
+        },
+      };
+
+      const card = document.createElement("morning-routine-card");
+      card.setConfig({ type: "custom:morning-routine-card", routine: "demo" });
+      card.hass = { connection: server };
+      document.getElementById("holder").append(card);
+
+      const reset = (change) => {
+        server.gone = false;
+        server.refuse = false;
+        server.view = baseView();
+        if (change) change(server.view);
+        server.push();
+      };
+      const press = (selector) =>
+        setTimeout(() => card.shadowRoot.querySelector(selector).click(), 100);
+
+      const cases = {
+        "Three steps": () => reset(),
+        "No label yet": () =>
+          reset((view) => {
+            view.steps = [];
+            view.items = [];
+            view.problems = ["no_label"];
+          }),
+        Problems: () =>
+          reset((view) => {
+            view.clock = null;
+            view.is_on = false;
+            view.problems = ["sensor_missing", "no_clock"];
+          }),
+        "Stale sensor": () => reset((view) => (view.problems = ["sensor_stale"])),
+        "A step that's gone": () =>
+          reset((view) => {
+            view.steps[0].available = false;
+            view.items = view.items.filter((entry) => entry.item !== "script.start_the_heater");
+          }),
+        "Server refuses": () => {
+          reset();
+          server.refuse = true;
+        },
+        "Routine goes away": () => {
+          server.gone = true;
+          for (const callback of server.subscribers) callback({ unavailable: true });
+          server.subscribers.clear();
+        },
+        "Routine comes back": () => {
+          server.gone = false;
+          log("the routine is back; the card should return within 10 seconds");
+        },
+        "Second person changes steps": () => {
+          server.view.steps = [step("script.open_the_blinds", 10), step("script.play_the_radio", -45)];
+          server.push();
+        },
+        "Add a step": () => {
+          reset();
+          press('[data-key="add"]');
+        },
+        "Edit a step": () => {
+          reset();
+          press('[data-key="name:scene.kitchen_lights_dim"]');
+        },
+        "Nothing left to add": () =>
+          reset((view) => {
+            view.items = view.items.filter((entry) => view.steps.some((used) => used.item === entry.item));
+          }),
+        "No routine chosen": () => card.setConfig({ type: "custom:morning-routine-card", routine: "" }),
+        "Routine chosen again": () => card.setConfig({ type: "custom:morning-routine-card", routine: "demo" }),
+      };
+      for (const [label, run] of Object.entries(cases)) {
+        const button = document.createElement("button");
+        button.textContent = label;
+        button.addEventListener("click", run);
+        document.getElementById("cases").append(button);
+      }
+      window.demo = { card, server, cases };
+    </script>
+  </body>
+</html>
