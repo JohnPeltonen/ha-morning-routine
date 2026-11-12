@@ -214,6 +214,7 @@ The owner asked for this on 2026-11-11. Any logged-in account can already switch
 - **A light** can be turned on or turned off. Turning on can carry a brightness from 1 to 100 percent if the light dims. Left empty, the light comes on as it was last. Colour isn't offered.
 - **A thermostat with one target temperature** can be turned on or turned off. This covers a heater as well as a simple house thermostat. Turning on can carry a temperature. Left empty, it starts at its last setting.
 - **A thermostat that takes a range** has a "heat to" and a "cool to" temperature. A step sets both. It doesn't turn the thermostat on or off. When the step runs, it sends the numbers that fit the thermostat's mode at that moment: both in heat-and-cool mode, only "heat to" in heat mode, and only "cool to" in cool mode. If the thermostat is off, the step fails and nothing changes. Builder's call.
+- **A light or thermostat step that is removed and added back is a new step,** so it can run again for the same alarm. A script is known by its item and does not. Builder's call, and a known gap against "Each step runs once per alarm".
 - **A step never puts a setting back.** Whatever changes the device next replaces it.
 - **A device can be in a routine more than once,** at different times or with different actions. This allows a light on before the alarm and off after it.
 - Temperatures are in the server's unit and are checked against the device's own lowest and highest setting.

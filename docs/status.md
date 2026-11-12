@@ -1,13 +1,76 @@
 # Status
 
-Last updated 2026-11-11.
+Last updated 2026-11-12.
+
+## Where Phase 3 stands
+
+Phase 3 lets a step change a light or a thermostat directly, with no label. The owner asked for it on 2026-11-11. It is built, reviewed and pushed. It is not on any server yet.
+
+- All 8 tasks of the [Phase 3 plan](superpowers/plans/2026-11-11-phase-3-light-and-thermostat-steps.md) are done. One session built it, and one fresh reviewer then read the whole change on 2026-11-12.
+- The integration version is 0.3.0.
+- Tests: 149 rules and translation tests, 215 Home Assistant tests, and 45 card tests.
+- The new form was run in a browser at 360 pixels wide against the fake server in `tests/card/demo.html`, by script. It has not been seen inside Home Assistant, and no step has changed a real light or thermostat yet.
+
+### What Phase 3 added
+
+- A step now has an id, an action (`run`, `turn_on`, `turn_off` or `set_temperature`) and up to four settings. An alarm records what ran by the step's id, or by its item when it has no id. Scripts, scenes and automations have no id, so files saved by version 0.2.0 behave the same.
+- `devices.py`: works out what type a device is from what it reports, and which Home Assistant actions a step sends.
+- `step_input.py`: checks a device step's action and settings against the device.
+- The view lists every light and thermostat beside the labelled items.
+- The card's form has a search box, a grouped list, and the action and settings that fit the item chosen.
+
+### Next for Phase 3, each needing the owner's approval
+
+1. Update the integration on the owner's server to 0.3.0 and restart.
+2. Try one light step and one thermostat step with the owner watching, before relying on either.
+
+### Decisions made while building Phase 3
+
+Each says what was decided, why, and what it costs if wrong.
+
+1. **A missing label is no longer shown as a problem on the card.** A routine can now be built from devices alone. The add-a-step form has a note about the label when no labelled item is offered. Cost: a household with no label gets no hint on the card's face.
+2. **The picker is the browser's own list with a search box above it,** grouped into Lights, Thermostats, and Scripts, scenes and automations. Least code, and a phone shows its own picker. Cost: it may feel clumsy with hundreds of devices.
+3. **A new form starts on "Choose one".** With every light listed, a stray tap on Save would otherwise add whatever came first. Cost: one more tap.
+4. **A device that reports "unavailable" still counts as a step that can run.** Its step stays in place and is tried at its time. Cost: Home Assistant skips an unavailable light without an error, so the step is recorded as started when nothing happened.
+5. **A light or thermostat step that is removed and added back is a new step.** If its time is still ahead of the alarm, or already due before the alarm, it runs again that morning. A script does not, because it is known by its item. The spec says a step that ran doesn't run again when removed and added back, so this is a known gap for devices. Cost: a device can be switched on twice in one morning after such an edit.
+6. **A range thermostat in `auto` mode that shows one temperature gets "heat to".** The spec doesn't mention auto mode. Cost: the wrong number on a thermostat that is cooling in auto mode.
+7. **Which type a thermostat is comes from the features it reports.** Thermostats that report the range feature all the time can only have temperatures set, never be turned on or off by a step. Cost: none known for those; see the Venstar item below for one that changes.
+8. **Three refusal messages were reworded** to cover devices: a step that isn't written correctly, an item that can't be a step, and an item listed twice.
+9. **New card text the owner has not seen:** "What to do", "Search", the hints "as it was" and "last setting", "No longer available. It was deleted.", the sentence shown when there is nothing to add, and the note about the label in the form.
+10. **The card's logic was written before its tests were updated.** The reviewer checked this by changing the logic 35 ways and running the tests. No test was unable to fail. Two gaps were found and tests were added for them.
+
+### Final review of Phase 3
+
+One fresh reviewer read commits 1fe6991 (fix a card that could get stuck after a connection drop) to a5545ba (document light and thermostat steps and move to version 0.3.0) on 2026-11-12. It ran every test suite, wrote 12 probes, and ran the form in a browser.
+
+**Fixed:**
+
+- **Pressing Enter in the form's search box saved the step.** A person searching for a different item could add the one already chosen, and a step due soon runs right away. Enter in the search box now does nothing. Checked in a browser before and after. There is no automated test for it, because the form has none (see below).
+- **A list sent to `set_steps` without ids could give one step another step's id.** With two steps for one light, sending them in the other order ran the first one twice and never ran the second. Each entry that is exactly an existing step now keeps that step's id, and only then do changed entries get one. Two tests failed first.
+- **A range thermostat in heat or cool mode that still shows both numbers got both.** The spec says only the fitting number is sent. The mode now decides first. Two tests failed first.
+- Two tests were added for the card: editing one of two steps for the same light leaves the other alone, and changing only a step's item gives it a new id.
+
+**Checked and found fine:** all five Review Focus items in the plan, 11 hand-made requests from a non-admin account (all refused), Home Assistant's climate feature numbers, no red, no clock times, and no `innerHTML`.
+
+**Found and not fixed.** None is filed as an issue. The owner confirms each one first.
+
+- The form can save something different from what it shows if a device changes while the form is open. A brightness box stays visible after the light stops reporting that it dims, and the brightness is then left out. A "Turn off" step for an unavailable light shows "Turn on" if the light comes back while the form is open.
+- A thermostat that reports the range feature only in some modes changes type with its mode. Home Assistant's Venstar integration does this. A "turn on" step saved in heat mode can't be edited while the thermostat is in auto mode.
+- After a restart, a step for a light that has no state yet is not dropped, and it runs when the light appears, even long after its time. This only affects lights with no entry in the entity registry.
+- A step for an unavailable light or one-temperature thermostat is recorded as started (decision 4 above).
+- A hand-made request can give a device step any text as its id, including a script's entity id, which then blocks that script from being added. The card never sends this.
+- `light.Lamp` with a capital letter is accepted from the `set_steps` action, and the card then shows it as a device that isn't in its list.
+- The form (`_openForm`, `_fillFormSettings`, `_saveForm`, `_refreshForm`) has no automated test. It was checked by a scripted browser run that is not in the repo.
+- `chosenItem(items, null)` and its test are left over. No form starts on its first item any more.
+- A hidden light is left out of the card's list but accepted by the server if named directly.
+- The view now carries every light and thermostat and is sent on every change to the routine and every entity registry change. It has not been measured on a house with hundreds of devices.
 
 ## Where Phase 2 stands
 
-Phase 2 is the dashboard card with time steps. It is built and pushed. It is not on any server yet.
+Phase 2 is the dashboard card with time steps. It is built and pushed. The owner installed it on 2026-11-11 at commit 1fe6991 (fix a card that could get stuck after a connection drop), and the card showed a routine correctly on a dashboard.
 
 - Tasks 1 to 7 of the [Phase 2 plan](superpowers/plans/2026-11-10-phase-2-card-with-time-steps.md) are done, and Task 8 through step 4. One session built every task. One fresh reviewer then read the whole change on 2026-11-11, and its two most serious findings were fixed (see "Final review of Phase 2" below).
-- The integration version is 0.2.0.
+- Phase 2 was version 0.2.0.
 - Tests: 142 rules and translation tests, 127 Home Assistant tests, and 29 card tests (23 for the logic, 6 for the element when the connection drops).
 - The card was run in a browser at 360 pixels wide against a fake server (`tests/card/demo.html`). The plan's demo cases and form checks were gone through there by script, and 3 screenshots were kept, not one per case as the plan asked. The demo's fake server can't drop its connection, so a Home Assistant restart was not seen in a browser; the element tests cover it. The card has not been seen inside Home Assistant.
 
