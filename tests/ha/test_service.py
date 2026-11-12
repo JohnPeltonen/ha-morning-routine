@@ -1,6 +1,7 @@
 import pytest
 from homeassistant.core import Context
 from homeassistant.exceptions import ServiceValidationError, Unauthorized
+from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 from support import ALARM, advance, at
 
@@ -169,3 +170,34 @@ async def test_set_steps_with_passed_time_runs_right_away(
     await set_steps(hass, loaded.entry_id, [{"item": labeled_script, "offset_minutes": -30}])
 
     assert [call.data["entity_id"] for call in service_calls] == [labeled_script]
+
+
+async def test_set_steps_keeps_a_step_whose_item_lost_its_label(hass, loaded, labeled_script, add_item):
+    other = add_item("script.other_step")
+    await set_steps(
+        hass, loaded.entry_id, [{"item": labeled_script, "offset_minutes": -30}, {"item": other, "offset_minutes": 0}]
+    )
+    er.async_get(hass).async_update_entity(labeled_script, labels=set())
+
+    await set_steps(
+        hass,
+        loaded.entry_id,
+        [{"item": labeled_script, "offset_minutes": -30}, {"item": other, "offset_minutes": 0, "enabled": False}],
+    )
+
+    assert loaded.runtime_data.steps == [Step(labeled_script, -30, True), Step(other, 0, False)]
+
+
+async def test_set_steps_still_refuses_a_new_unlabeled_item(hass, loaded, labeled_script, add_item):
+    unlabeled = add_item("script.unlabeled", labeled=False)
+    await set_steps(hass, loaded.entry_id, [{"item": labeled_script, "offset_minutes": -30}])
+
+    with pytest.raises(ServiceValidationError) as refused:
+        await set_steps(
+            hass,
+            loaded.entry_id,
+            [{"item": labeled_script, "offset_minutes": -30}, {"item": unlabeled, "offset_minutes": 0}],
+        )
+
+    assert refused.value.translation_key == "item_not_allowed"
+    assert loaded.runtime_data.steps == [Step(labeled_script, -30, True)]
