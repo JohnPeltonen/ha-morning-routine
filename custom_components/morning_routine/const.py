@@ -10,6 +10,8 @@ EVENT_STEP_RAN = "morning_routine_step_ran"
 SERVICE_SET_STEPS = "set_steps"
 
 ALLOWED_DOMAINS = ("script", "scene", "automation")
+# Devices a step can change directly. These need no label.
+DEVICE_DOMAINS = ("light", "climate")
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 ATTR_STEPS = "steps"
 MIN_OFFSET_MINUTES = -720
