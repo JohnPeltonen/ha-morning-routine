@@ -4,7 +4,7 @@ A Home Assistant integration that runs scripts, scenes and automations around th
 
 Each phone gets its own routine. A person can turn their routine on or off, skip the next alarm, and choose which clock app to follow, without building anything.
 
-**This version is set up by an admin.** A dashboard card for adding, removing and retiming steps is coming. Until then, an admin sets the steps with a service call, described below.
+Steps are added, retimed, turned off and removed from a dashboard card. Anyone logged in to Home Assistant can use it. An admin does the one-time setup below.
 
 ## Before you install
 
@@ -13,8 +13,8 @@ Each phone gets its own routine. A person can turn their routine on or off, skip
 
 ## Install
 
-1. In HACS, add `https://github.com/JohnPeltonen/ha-morning-routine` as a custom repository of type Integration, then download Morning Routine.
-2. Restart Home Assistant.
+1. On Home Assistant 2026.11 or newer, go to Settings, Marketplace, choose Add from link, and enter `https://github.com/JohnPeltonen/ha-morning-routine`. Then download Morning Routine. On older versions, add the same address in HACS as a custom repository of type Integration.
+2. Restart Home Assistant. Every update of this integration also needs a restart.
 3. In the Home Assistant Android app, go to Settings, Companion app, Manage sensors. Turn on **Next alarm**, and leave that sensor's **Allow list** off.
 4. In Home Assistant, go to Settings, Devices & services, Add integration, and choose Morning Routine. Pick the phone.
 
@@ -28,15 +28,50 @@ Each routine has these entities:
 | Current alarm | The alarm being followed (diagnostic). |
 | Last ignored entry | The last sensor value that was ignored, and why (diagnostic). |
 
-Anyone logged in to Home Assistant can use the switches and the clock picker. Only an admin can change the steps.
+Anyone logged in to Home Assistant can use the switches and the clock picker, and can change the steps from the card.
 
-## Set the steps
+## Choose what a step may run
 
-A step can be a script, scene or automation.
+A step can be a script, scene or automation. An admin decides which ones are offered:
 
 1. Create a label named `morning routine` under Settings, Areas, labels & zones. The integration doesn't create it.
-2. Apply that label to each item you want to use as a step. Items without the label don't run.
-3. Call `morning_routine.set_steps` from Developer tools, Actions:
+2. Add that label to each script, scene or automation that may be used as a step. Items without the label aren't offered and don't run.
+
+## Add the card to a dashboard
+
+The integration loads the card by itself. There is no dashboard resource to add.
+
+1. Edit a dashboard, choose Add card, and pick **Morning Routine**.
+2. Choose the routine in the card's settings.
+
+In YAML, the card is:
+
+```yaml
+type: custom:morning-routine-card
+routine: 0123456789abcdef0123456789abcdef
+```
+
+`routine` is the routine's config entry id. The card's settings form fills it in for you.
+
+## Use the card
+
+The card shows the routine as a timeline. Steps before the alarm are above the word Alarm, and steps at or after it are below.
+
+- **The switch at the top** turns the whole routine on or off.
+- **+ Add a step** opens a form. Choose what should happen, and how many minutes before or after the alarm. A step can be up to 720 minutes before the alarm and up to 60 minutes after it.
+- **Tap a step's name** to change its time, change what it runs, or remove it.
+- **The switch beside a step** turns that one step off without removing it.
+- **Skip next alarm** and **Clock to watch** work the same as the entities above.
+
+Each step runs once per alarm. Each script, scene or automation can be a step once per routine.
+
+If something needs attention, the card says so in a sentence. For example, it says when no clock is chosen, or when a step's script was deleted or lost the label.
+
+If the card doesn't appear in the card list after an update, refresh the browser, or close and reopen the Home Assistant app.
+
+## For admins and scripts
+
+The action `morning_routine.set_steps` replaces all the steps of one routine. Only an admin can call it. The card doesn't need it, and it may be removed in a later version.
 
 ```yaml
 action: morning_routine.set_steps
@@ -52,15 +87,13 @@ data:
 
 - `offset_minutes` is the time from the alarm, from -720 to 60. A negative number is before the alarm.
 - `enabled` is optional and defaults to true.
-- The call replaces all the steps of that routine. If any step is refused, nothing changes.
-
-Each step runs once per alarm.
+- If any step is refused, nothing changes.
 
 ## How it decides
 
 - **Home only.** A step runs only when the phone's location is exactly `home`. If the phone briefly reports `unavailable` or `unknown`, the last real location is used. A zone drawn on your property, such as a yard, counts as away and blocks steps.
 - **Alarms only.** The sensor also reports things that aren't alarms. The integration follows only the chosen clock, and only entries set to a whole minute. An admin can turn off the whole-minute check under the integration's Configure button.
-- **Catching up.** If a step's time passes while it is blocked, it runs as soon as the block clears, as long as the alarm is still ahead. This means **a change can start a step right away**: turning the routine on, turning Skip next alarm off, choosing a clock, coming home, or setting steps.
+- **Catching up.** If a step's time passes while it is blocked, it runs as soon as the block clears, as long as the alarm is still ahead. This means **a change can start a step right away**: turning the routine on, turning Skip next alarm off, choosing a clock, coming home, or adding or retiming a step.
 - **After the alarm.** There is no catching up once the alarm has gone off. A step more than 10 seconds late at that point is dropped. An alarm first seen more than 5 seconds after its time runs no steps.
 - **Snoozes.** An entry up to 20 minutes after an alarm counts as the same alarm, so nothing runs again. A 7:00 with a 7:10 backup runs one routine, and a 7:00 with a 7:30 backup runs two.
 - **Restarts.** A step that came due while Home Assistant was restarting runs only if it is less than 5 minutes late, the phone was home before the restart, and the phone doesn't now report somewhere else. Otherwise it is dropped.

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Budget:** 1 session / ~500k tokens if one session builds every task itself, or ~1.2M tokens with a fresh agent and a fresh reviewer per task. The owner chooses before the build starts, and the other figure is then struck out.
+**Budget:** 1 session / ~500k tokens. The owner chose on 2026-11-10 to have one session build every task itself, with one fresh reviewer at the end. ~~About 1.2M tokens with a fresh agent and a fresh reviewer per task.~~
 
 **Goal:** Anyone logged in can see a routine on a dashboard card and add, retime, turn off and remove its time steps from a phone, with no admin and no Developer tools.
 

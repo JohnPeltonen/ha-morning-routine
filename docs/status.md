@@ -1,25 +1,55 @@
 # Status
 
-Last updated 2026-11-10.
+Last updated 2026-11-11.
+
+## Where Phase 2 stands
+
+Phase 2 is the dashboard card with time steps. It is built and pushed. It is not on any server yet.
+
+- Tasks 1 to 7 of the [Phase 2 plan](superpowers/plans/2026-11-10-phase-2-card-with-time-steps.md) are done, and Task 8 through its final review. One session built every task, and one fresh reviewer read the whole change at the end.
+- The integration version is 0.2.0.
+- Tests: 142 rules and translation tests, 127 Home Assistant tests, and 20 card logic tests.
+- The card was run in a browser at 360 pixels wide against a fake server (`tests/card/demo.html`). Every case in the plan was checked there. It has not been seen inside Home Assistant.
+
+### What Phase 2 added
+
+- `step_input.py`: the checks on a list of steps. A step already in a routine may stay after its item is deleted or loses the label.
+- `view.py`: one bundle of facts about a routine, which the card draws.
+- `websocket.py`: three commands for the card. Anyone logged in may use them.
+- `card.py` and `www/morning-routine-card.js`: the card, served and loaded by the integration.
+
+### Next for Phase 2, each needing the owner's approval
+
+1. Update the integration on the owner's server and restart.
+2. Put the card on a test dashboard and check it on a phone, as a non-admin account if one is available.
+
+### Decisions made while building Phase 2
+
+Each says what was decided, why, and what it costs if wrong.
+
+1. The tests need the `home-assistant-frontend` package, pinned in `requirements_test_ha.txt`. The integration now depends on the frontend component, which can't set up in tests without it. The pin must move when the Home Assistant test version moves.
+2. The card tests run with `node --test "tests/card/*.test.mjs"`. Node 24 on Windows fails when given the folder. No cost.
+3. The card and its form were committed together. They are one class. Cost: a coarser history.
+4. The minutes box is a text box with a number keypad, not a number box. A number box hides letters from the check, so typing "abc" could not get its sentence. Cost if wrong: one attribute.
+5. After the connection to Home Assistant comes back, the card subscribes again by itself, and does not rely on the frontend library to do it. After a restart the routine may not be loaded yet, and the card's own 10-second retry covers that. If wrong, a card could show an old view after a reconnect until the page is reloaded.
+6. `build_view` takes a plain `ConfigEntry` type hint. Importing the integration's own alias would be a circular import. Cost: a type hint.
+7. A second error text, `clock_not_offered`, sits beside the older `clock_not_found`. The older one names the clock; the card's command has only an app id to show, which means nothing to a person.
 
 ## Where Phase 1 stands
 
-Phase 1 is built and passing CI. It is not installed on any server yet.
+Phase 1 is built, passing CI, and installed on the owner's server since 2026-11-10. A test with a harmless script passed that day: the step ran 2 minutes before a test alarm.
 
-- Tasks 1 to 8 of the [Phase 1 plan](superpowers/plans/2026-11-01-phase-1-rules-settings-first-install.md) are done.
-- Task 9, steps 1 to 3, are done: the final whole-branch review ran, its blocking findings were fixed, and CI passed.
-- CI on 125d70d (limit steps to 60 minutes after the alarm and correct the README): Rules tests 142 passed, Home Assistant tests 91 passed, Hassfest passed.
-- `main` matches `origin/main`.
+- Tasks 1 to 8 of the [Phase 1 plan](superpowers/plans/2026-11-01-phase-1-rules-settings-first-install.md) are done, and Task 9 through step 5.
+- A second look at the final-review fixes was done 2026-11-10, with no findings. It covered c23f0f7 (treat a snooze seen after the sensor moved on as the same alarm) and 125d70d (limit steps to 60 minutes after the alarm and correct the README). The snooze fix relies on the sensor moving off an alarm only after the alarm time. In 10 days of readings from two phones, the sensor moved on 0.5 to 6.3 seconds after the alarm time at every ring, and never before.
 
-## Next, in order
+### Left from Phase 1, each needing the owner's approval
 
-1. **A second look at the final-review fixes.** Done 2026-11-10, with no findings. It covered c23f0f7 (treat a snooze seen after the sensor moved on as the same alarm) and 125d70d (limit steps to 60 minutes after the alarm and correct the README). The snooze fix relies on the sensor moving off an alarm only after the alarm time. In 10 days of readings from two phones, the sensor moved on 0.5 to 6.3 seconds after the alarm time at every ring, and never before.
-2. **Task 9, step 4: install on the owner's server.** Needs the owner's approval. The server steps are in the owner's private repo (see [CLAUDE.md](../CLAUDE.md)).
-3. **Task 9, step 5: a test with a harmless script.** Needs the owner's approval, and someone must set a test alarm on the phone in person.
-4. **Task 9, step 6: the real routine.** Needs the owner's approval.
-5. **Close Phase 1.** File the confirmed tickets below. Delete the run's scratch folder, `.superpowers/sdd/2026-11-01-phase-1-rules-settings-first-install/`, on the computer that has it.
+1. **Task 9, step 6: the real routine.**
+2. **Close Phase 1.** File the confirmed tickets below. Delete the run's scratch folder, `.superpowers/sdd/2026-11-01-phase-1-rules-settings-first-install/`, on the computer that has it.
 
-Phase 2 (the card and motion steps) and Phase 3 (release) are listed at the end of the plan. Each needs its own plan and its own go from the owner.
+## Later phases
+
+Each needs its own plan and its own go from the owner. They are listed at the end of the Phase 2 plan: motion steps, two smaller items (clock apps from the sensor's past history, and refusing scripts that need input fields), and release.
 
 ## Resuming with subagent-driven-development
 
