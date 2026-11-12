@@ -60,7 +60,7 @@ async def test_event_is_fired_with_result(
     await advance(hass, freezer, at(ALARM, minutes=-30))
 
     assert [event.data for event in events] == [
-        {"routine": entry.entry_id, "step": -30, "item": labeled_script, "result": "started"}
+        {"routine": entry.entry_id, "step": -30, "item": labeled_script, "action": "run", "result": "started"}
     ]
     assert routine.last_result is not None
     assert routine.last_result["result"] == "started"

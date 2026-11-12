@@ -31,10 +31,12 @@ from custom_components.morning_routine.const import (
     CONF_DEVICE_ID,
     CONF_REQUIRE_ZERO_SECONDS,
     CONF_TRACKER,
+    DEVICE_DOMAINS,
     DOMAIN,
     EVENT_STEP_RAN,
     LABEL_NAME,
 )
+from custom_components.morning_routine.devices import device_calls
 from custom_components.morning_routine.rules import Alarm, IgnoredEntry, RoutineState, Step
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,13 @@ def item_is_allowed(hass: HomeAssistant, item: str) -> bool:
     registry_entry = er.async_get(hass).async_get(item)
     label = lr.async_get(hass).async_get_label_by_name(LABEL_NAME)
     return registry_entry is not None and label is not None and label.label_id in registry_entry.labels
+
+
+def step_is_allowed(hass: HomeAssistant, step: Step) -> bool:
+    """Whether a step can run now. A light or thermostat needs no label, only to exist."""
+    if step.item.split(".", 1)[0] in DEVICE_DOMAINS:
+        return step.action != "run" and hass.states.get(step.item) is not None
+    return step.action == "run" and item_is_allowed(hass, step.item)
 
 
 def routine_store(hass: HomeAssistant, entry: ConfigEntry) -> Store[dict[str, Any]]:
@@ -251,14 +260,14 @@ class Routine:
             self._notify()
 
     def _allowed_steps(self) -> list[Step]:
-        return [step for step in self._steps if item_is_allowed(self._hass, step.item)]
+        return [step for step in self._steps if step_is_allowed(self._hass, step)]
 
     async def _async_run(self, due: list[tuple[Alarm, Step]]) -> None:
         for alarm, step in due:
             if self._stopped:
                 return
             # Saved before the call: a crash can lose a run but never repeat one.
-            alarm.ran.add(step.item)
+            alarm.ran.add(step.key)
             await self._async_save()
             # A stop during the save means a reload may have started a new routine that sees this
             # step as already run. Starting it here too could run it twice, so it is lost instead.
@@ -268,16 +277,23 @@ class Routine:
             self._hass.async_create_task(self._async_call_step(step), f"{DOMAIN} step {step.item}")
 
     async def _async_call_step(self, step: Step) -> None:
-        domain, service = STEP_SERVICES[step.item.split(".", 1)[0]]
         error = None
         try:
-            await self._hass.services.async_call(domain, service, {"entity_id": step.item}, blocking=True)
+            if step.action == "run":
+                domain, service = STEP_SERVICES[step.item.split(".", 1)[0]]
+                calls = [(domain, service, {"entity_id": step.item})]
+            else:
+                calls = device_calls(self._hass, step)
+            # In order, and the first failure stops the rest.
+            for domain, service, data in calls:
+                await self._hass.services.async_call(domain, service, data, blocking=True)
         except Exception as err:
             error = str(err) or type(err).__name__
             logger.error("Step %s failed: %s", step.item, error, exc_info=True)
         result = "failed" if error else "started"
         self._last_result = {
             "item": step.item,
+            "action": step.action,
             "step": step.offset_minutes,
             "result": result,
             "error": error,
@@ -289,6 +305,7 @@ class Routine:
                 "routine": self._entry.entry_id,
                 "step": step.offset_minutes,
                 "item": step.item,
+                "action": step.action,
                 "result": result,
             },
         )
