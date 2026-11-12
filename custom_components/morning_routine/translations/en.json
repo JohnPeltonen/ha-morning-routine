@@ -71,16 +71,28 @@
       "message": "Steps must be a list."
     },
     "invalid_step": {
-      "message": "Step {number} must have an item (text) and offset_minutes (a whole number), and may have enabled (true or false). Nothing else is allowed."
+      "message": "Step {number} isn't written correctly. It needs an item (text) and offset_minutes (a whole number). It may have enabled (true or false). A light or thermostat step also needs an action, and may have that action's settings."
     },
     "item_not_allowed": {
-      "message": "{item} can't be a step. It must be a script, scene or automation that has the label \"morning routine\"."
+      "message": "{item} can't be a step. A step can be a light, a thermostat, or a script, scene or automation that has the label \"morning routine\"."
     },
     "duplicate_item": {
-      "message": "{item} is listed twice. Each item can be a step once."
+      "message": "{item} is listed twice. A script, scene or automation can be a step once."
     },
     "offset_out_of_range": {
       "message": "The offset for {item} must be a whole number of minutes from {low} to {high}."
+    },
+    "action_not_offered": {
+      "message": "{item} can't do that."
+    },
+    "brightness_out_of_range": {
+      "message": "Brightness must be a whole number from 1 to 100."
+    },
+    "temperature_out_of_range": {
+      "message": "The temperature for {item} must be from {low} to {high}."
+    },
+    "heat_not_below_cool": {
+      "message": "\"Heat to\" must be lower than \"Cool to\"."
     }
   },
   "services": {

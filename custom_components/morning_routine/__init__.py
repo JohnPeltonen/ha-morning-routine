@@ -35,12 +35,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         if entry.state is not ConfigEntryState.LOADED:
             raise refuse("entry_not_loaded")
         routine = entry.runtime_data
-        keep = frozenset(step.item for step in routine.steps)
-        await routine.async_set_steps(parse_steps(hass, call.data[ATTR_STEPS], keep))
+        await routine.async_set_steps(parse_steps(hass, call.data[ATTR_STEPS], routine.steps))
 
     websocket.async_register(hass)
     await async_register_card(hass)
-    # Temporary: steps are set from Developer tools until the card exists.
+    # For admins and scripts. The card uses the WebSocket commands.
     async_register_admin_service(hass, DOMAIN, SERVICE_SET_STEPS, set_steps, SET_STEPS_SCHEMA)
     return True
 

@@ -83,8 +83,7 @@ async def ws_set_steps(hass: HomeAssistant, connection: websocket_api.ActiveConn
     if entry is None:
         return
     routine = entry.runtime_data
-    keep = frozenset(step.item for step in routine.steps)
-    await routine.async_set_steps(parse_steps(hass, msg["steps"], keep))
+    await routine.async_set_steps(parse_steps(hass, msg["steps"], routine.steps))
     connection.send_result(msg["id"])
 
 

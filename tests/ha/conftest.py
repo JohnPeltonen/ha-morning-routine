@@ -133,6 +133,42 @@ def labeled_script(add_item: Callable[..., str]) -> str:
 
 
 @pytest.fixture
+def lamp(hass: HomeAssistant) -> str:
+    """A light that dims."""
+    hass.states.async_set("light.lamp", "off", {"friendly_name": "Lamp", "supported_color_modes": ["brightness"]})
+    return "light.lamp"
+
+
+@pytest.fixture
+def heater(hass: HomeAssistant) -> str:
+    """A thermostat with one temperature that can be turned on and off."""
+    hass.states.async_set(
+        "climate.heater",
+        "off",
+        {"friendly_name": "Heater", "supported_features": 1 + 128 + 256, "min_temp": 86, "max_temp": 125},
+    )
+    return "climate.heater"
+
+
+@pytest.fixture
+def hall(hass: HomeAssistant) -> str:
+    """A thermostat that takes a range, in heat-and-cool mode."""
+    hass.states.async_set(
+        "climate.hall",
+        "heat_cool",
+        {
+            "friendly_name": "Hall",
+            "supported_features": 1 + 2 + 128 + 256,
+            "min_temp": 45,
+            "max_temp": 95,
+            "target_temp_low": 65,
+            "target_temp_high": 72,
+        },
+    )
+    return "climate.hall"
+
+
+@pytest.fixture
 def service_calls(hass: HomeAssistant) -> list[ServiceCall]:
     """Record every call to the services a step can use."""
     calls: list[ServiceCall] = []
@@ -140,6 +176,15 @@ def service_calls(hass: HomeAssistant) -> list[ServiceCall]:
     async def record(call: ServiceCall) -> None:
         calls.append(call)
 
-    for domain, service in (("script", "turn_on"), ("scene", "turn_on"), ("automation", "trigger")):
+    for domain, service in (
+        ("script", "turn_on"),
+        ("scene", "turn_on"),
+        ("automation", "trigger"),
+        ("light", "turn_on"),
+        ("light", "turn_off"),
+        ("climate", "turn_on"),
+        ("climate", "turn_off"),
+        ("climate", "set_temperature"),
+    ):
         hass.services.async_register(domain, service, record)
     return calls
