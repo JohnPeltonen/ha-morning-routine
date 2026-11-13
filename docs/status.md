@@ -2,6 +2,29 @@
 
 Last updated 2026-11-12.
 
+## Where the card redesign stands
+
+On 2026-11-12 the owner asked to rethink the card so it uses Home Assistant's own controls, such as sliders for brightness and temperature, instead of the plain boxes the Phase 3 form has. Making new device types easy to add comes later.
+
+The design is written and was read by a fresh reviewer: [2026-11-12-card-uses-home-assistant-controls-design.md](superpowers/specs/2026-11-12-card-uses-home-assistant-controls-design.md). Nothing is built.
+
+**Decided by the owner, from mockups:**
+
+- The form uses Home Assistant's standard controls: its entity picker, toggle buttons, checkbox and slider. It doesn't use the round thermostat dial or the big brightness bar. Those are internal to Home Assistant and can change in any release.
+- A thermostat that takes a range gets two sliders, "heat to" and "cool to". Each slider's limits and step size come from the device.
+- The server describes each item's settings in Home Assistant's selector format, and the card draws them. The card stops knowing what a light or thermostat is.
+- The card's switches and clock dropdown become Home Assistant's own. The timeline stays.
+
+**Next, each needing the owner:**
+
+1. Answer the design's "Open question for the owner": where the card is tried in a real Home Assistant and where the Home Assistant tests run. This laptop has no WSL. The owner's desktop does, and the owner plans to continue there.
+2. Read the design, check the list "Calls Claude made", and approve it or change it.
+3. Then write the plan for this phase with `superpowers:writing-plans`. The plan's first task proves the card can load Home Assistant's controls on version 2026.10, for an admin and a non-admin account, before anything else is built.
+
+The mockups are in `.superpowers/brainstorm/`, which git ignores, on the laptop where they were made. The design's text sketch is the reference.
+
+Phase 3 (version 0.3.0) is still not on the owner's server. This redesign doesn't change how steps are saved, so 0.3.0 can be installed and tried before or after it.
+
 ## Where Phase 3 stands
 
 Phase 3 lets a step change a light or a thermostat directly, with no label. The owner asked for it on 2026-11-11. It is built, reviewed and pushed. It is not on any server yet.
