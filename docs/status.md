@@ -2,11 +2,14 @@
 
 Last updated 2026-11-13.
 
-## Version 0.4.1: two fixes after the owner's first try of 0.4.0
+## Versions 0.4.1 and 0.4.2: two fixes after the owner's first try of 0.4.0
 
-Version 0.4.1 is committed on the owner's desktop. It is not pushed and not on any server. It holds two fixes: the form now loads on Home Assistant 2026.11, and the card asks for a reload after an update.
+- **0.4.1** makes the card ask for a reload after an update. The owner pushed it on 2026-11-13.
+- **0.4.2** makes the form load on Home Assistant 2026.11. It is committed on the owner's desktop and not pushed. It has its own version number because 0.4.1 was already pushed: a browser fetches a new card file only when the version in its address changes.
 
-### The form didn't load on Home Assistant 2026.11
+Read from the owner's server on 2026-11-13, late: Home Assistant was still running 0.4.0, and the card file on its disk was newer than 0.4.0. That fits files downloaded with no restart yet.
+
+### 0.4.2: the form didn't load on Home Assistant 2026.11
 
 **What happened.** On 2026-11-13 the owner opened the 0.4.0 form on a server running Home Assistant 2026.11.1. It showed "This form couldn't load Home Assistant's controls. Reload the page to try again." Version 0.4.0 had only been tried on 2026.10.0.
 
@@ -33,7 +36,7 @@ Version 0.4.1 is committed on the owner's desktop. It is not pushed and not on a
 - The Home Assistant tests and the tests in GitHub run against 2026.10.0 only. Nothing automatic notices a change like this one in a newer Home Assistant. The second throwaway Home Assistant, described in `CLAUDE.md`, is the only check on 2026.11.
 - On 2026.11 the checkbox is 20 pixels tall. On 2026.10 it was 40.
 
-### The card asks for a reload after an update
+### 0.4.1: the card asks for a reload after an update
 
 **What happened.** On 2026-11-13 the owner updated the server from 0.3.0 to 0.4.0. The browser kept running the 0.3.0 card, and its form showed each action as "[object Object]". Version 0.4.0 sends each action as a record with a name and settings. The 0.3.0 card expected a word and printed the record as text. The server was right: it ran 0.4.0 and served the 0.4.0 card file.
 
@@ -52,7 +55,7 @@ Version 0.4.1 is committed on the owner's desktop. It is not pushed and not on a
 
 **Decision: the card knows its version from a number in its own file, not from its address.** The first build read the `?v=` in the card's address. In step 2 above, that showed the sentence although the new card was already running. Cost if wrong: a release that forgets to change `CARD_VERSION` fails the card tests.
 
-**Limit.** The 0.3.0 and 0.4.0 cards have no check. The sentence first helps on the update after 0.4.1.
+**Limit.** The 0.3.0 and 0.4.0 cards have no check. The sentence first helps on an update from 0.4.1 or later.
 
 **Tests.** 149 rules and translation tests, 247 Home Assistant tests (run in WSL), and 97 card tests. Each new test was shown to fail with the code broken on purpose. In a browser on the throwaway Home Assistant, a view with another version closed the open form and drew the sentence.
 
@@ -60,7 +63,7 @@ Version 0.4.1 is committed on the owner's desktop. It is not pushed and not on a
 
 **Not checked:** the owner's server, and a phone.
 
-**Next, each needing the owner's go:** push `main`, then update the integration on the owner's server to 0.4.1 and restart.
+**Next, each needing the owner's go:** push `main`, then update the integration on the owner's server to 0.4.2 and restart.
 
 ## Where the card redesign stands (Phase 4)
 

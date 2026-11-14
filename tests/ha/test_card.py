@@ -15,7 +15,7 @@ async def test_the_card_file_is_served(hass, hass_client, loaded):
 async def test_home_assistant_is_told_to_load_the_card(hass, loaded):
     urls = hass.data[frontend.DATA_EXTRA_MODULE_URL].urls
 
-    assert "/morning_routine/morning-routine-card.js?v=0.4.1" in urls
+    assert "/morning_routine/morning-routine-card.js?v=0.4.2" in urls
 
 
 async def test_a_second_routine_does_not_register_the_card_twice(hass, loaded):

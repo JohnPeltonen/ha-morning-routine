@@ -282,7 +282,7 @@ export function problemText(code) {
 // The version of the integration this file belongs to. It must match manifest.json, and a test
 // compares the two. After an update, a browser can keep running the old card against the new
 // server until the page is reloaded, and the two may not agree on what the server sends.
-export const CARD_VERSION = "0.4.1";
+export const CARD_VERSION = "0.4.2";
 
 export function needsReload(cardVersion, serverVersion) {
   return Boolean(cardVersion) && Boolean(serverVersion) && cardVersion !== serverVersion;
