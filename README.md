@@ -68,6 +68,8 @@ The card shows the routine as a timeline. Steps before the alarm are above the w
 
 Each step runs once per alarm.
 
+After an update, a browser that was already open can still hold the old card. The card then shows "Morning Routine was updated. Reload this page to finish the update." Reload the page. Home Assistant keeps a saved copy of each page, so it can take two reloads.
+
 ### What a step can be
 
 - **A light.** Turn it on or off. Turning on can set a brightness from 1 to 100 percent if the light dims. Leave Brightness unticked and the light comes on as it was last.

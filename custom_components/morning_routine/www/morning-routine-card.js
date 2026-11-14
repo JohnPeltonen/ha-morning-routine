@@ -279,6 +279,15 @@ export function problemText(code) {
   return PROBLEM_TEXT[code] ?? null;
 }
 
+// The version of the integration this file belongs to. It must match manifest.json, and a test
+// compares the two. After an update, a browser can keep running the old card against the new
+// server until the page is reloaded, and the two may not agree on what the server sends.
+export const CARD_VERSION = "0.4.1";
+
+export function needsReload(cardVersion, serverVersion) {
+  return Boolean(cardVersion) && Boolean(serverVersion) && cardVersion !== serverVersion;
+}
+
 
 // ---------------------------------------------------------------------------
 // The element. Everything below needs a browser.
@@ -302,6 +311,7 @@ if (globalThis.customElements) {
   const TEXT_ITEM_CHANGED = "This item changed while the form was open. Check the settings before saving.";
   const TEXT_LOCKED =
     "What this step does can't be changed here, because the item no longer offers it. Its time can still be changed.";
+  const TEXT_RELOAD = "Morning Routine was updated. Reload this page to finish the update.";
   const TEXT_NO_CONTROLS = "This form couldn't load Home Assistant's controls. Reload the page to try again.";
 
   // Home Assistant's own controls. It doesn't promise them to custom cards, so the card checks
@@ -609,6 +619,11 @@ if (globalThis.customElements) {
       this._title = event.view.title;
       this._unavailable = false;
       this._refused = null;
+      if (needsReload(CARD_VERSION, event.view.version)) {
+        this._closeForm();
+        this._render();
+        return;
+      }
       this._render();
       if (before) this._refreshForm(before);
     }
@@ -731,6 +746,17 @@ if (globalThis.customElements) {
       }
       const view = this._view;
       if (!view) return [];
+      // A card from before or after an update may misread this view, so it draws nothing from it.
+      if (needsReload(CARD_VERSION, view.version)) {
+        return [
+          h(
+            "div",
+            { class: "section" },
+            h("div", { class: "title" }, view.title),
+            h("p", { class: "note", role: "status" }, TEXT_RELOAD),
+          ),
+        ];
+      }
       return [this._headerSection(view), this._timelineSection(view), this._settingsSection(view)];
     }
 

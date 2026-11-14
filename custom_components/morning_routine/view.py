@@ -5,12 +5,14 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er, label_registry as lr
+from homeassistant.loader import async_get_loaded_integration
 from homeassistant.util import dt as dt_util
 
 from custom_components.morning_routine.const import (
     ALLOWED_DOMAINS,
     CONF_ALARM_SENSOR,
     DEVICE_DOMAINS,
+    DOMAIN,
     LABEL_NAME,
     MAX_OFFSET_MINUTES,
     MIN_OFFSET_MINUTES,
@@ -25,6 +27,8 @@ def build_view(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
     return {
         "entry_id": entry.entry_id,
         "title": entry.title,
+        # A card from another version shows a sentence asking for a reload.
+        "version": str(async_get_loaded_integration(hass, DOMAIN).version),
         "is_on": routine.is_on,
         "skip_next": routine.skip_next,
         "clock": routine.clock,

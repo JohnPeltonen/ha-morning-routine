@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
+  CARD_VERSION,
   actionOf,
   canShow,
   formEntry,
   formItems,
   formStep,
   joinOffset,
+  needsReload,
   offsetError,
   offsetLabel,
   problemText,
@@ -543,4 +546,17 @@ test("refreshed reads a locked step's saved settings again and stays locked", ()
   assert.equal(result.note, null);
   assert.equal(result.state.locked, true);
   assert.deepEqual(formStep(result.state, null), { item: "light.lamp", action: "turn_on", brightness: 60 });
+});
+
+test("the card's version is the one in the manifest", () => {
+  const manifest = new URL("../../custom_components/morning_routine/manifest.json", import.meta.url);
+  assert.equal(CARD_VERSION, JSON.parse(readFileSync(manifest, "utf8")).version);
+});
+
+test("needsReload is true only when the card and the server both know their version and they differ", () => {
+  assert.equal(needsReload("0.4.0", "0.4.1"), true);
+  assert.equal(needsReload("0.4.1", "0.4.1"), false);
+  assert.equal(needsReload(null, "0.4.1"), false);
+  assert.equal(needsReload("0.4.1", undefined), false);
+  assert.equal(needsReload("", ""), false);
 });

@@ -1,4 +1,6 @@
+import json
 from datetime import timedelta
+from pathlib import Path
 
 from homeassistant.helpers import entity_registry as er
 from support import ALARM
@@ -20,6 +22,12 @@ async def test_view_of_a_new_routine(hass, loaded):
     assert view["problems"] == ["no_clock"]
     assert "temperature_unit" not in view
     assert (view["min_offset_minutes"], view["max_offset_minutes"]) == (-720, 60)
+
+
+async def test_the_view_carries_the_version_the_server_runs(hass, loaded):
+    manifest = Path(__file__).parents[2] / "custom_components" / "morning_routine" / "manifest.json"
+
+    assert build_view(hass, loaded)["version"] == json.loads(manifest.read_text(encoding="utf-8"))["version"]
 
 
 async def test_view_lists_steps_and_labeled_items_by_name(hass, loaded, add_item):

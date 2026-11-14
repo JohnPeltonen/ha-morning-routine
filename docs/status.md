@@ -2,6 +2,37 @@
 
 Last updated 2026-11-13.
 
+## Version 0.4.1: the card asks for a reload after an update
+
+Version 0.4.1 is committed on the owner's desktop. It is not pushed and not on any server.
+
+**What happened.** On 2026-11-13 the owner updated the server from 0.3.0 to 0.4.0. The browser kept running the 0.3.0 card, and its form showed each action as "[object Object]". Version 0.4.0 sends each action as a record with a name and settings. The 0.3.0 card expected a word and printed the record as text. The server was right: it ran 0.4.0 and served the 0.4.0 card file.
+
+**Why a reload didn't fix it at once.** Home Assistant keeps a saved copy of its page in the browser, one for each page address. Seen in a browser on the throwaway Home Assistant, going from 0.4.0 to 0.4.1:
+
+1. First load after the update: the saved page lists the old card address, and the old card runs.
+2. Second load of the same address: the page still lists the old card address, but the file fetched from it is the new card.
+3. Third load: the page lists the new card address.
+
+**What 0.4.1 does.**
+
+- The server's view carries `version`, the version the server runs.
+- The card file carries `CARD_VERSION`. A card test compares it with `manifest.json`, so the two can't drift apart.
+- When the two versions differ, the card draws only the routine's title and one sentence, and closes the form if it is open. It draws nothing else from the view, because it may misread it.
+- A server that sends no version gets a card that draws as usual.
+
+**Decision: the card knows its version from a number in its own file, not from its address.** The first build read the `?v=` in the card's address. In step 2 above, that showed the sentence although the new card was already running. Cost if wrong: a release that forgets to change `CARD_VERSION` fails the card tests.
+
+**Limit.** The 0.3.0 and 0.4.0 cards have no check. The sentence first helps on the update after 0.4.1.
+
+**Tests.** 149 rules and translation tests, 247 Home Assistant tests (run in WSL), and 97 card tests. Each new test was shown to fail with the code broken on purpose. In a browser on the throwaway Home Assistant, a view with another version closed the open form and drew the sentence.
+
+**Card text for the owner to check:** "Morning Routine was updated. Reload this page to finish the update."
+
+**Not checked:** the owner's server, and a phone.
+
+**Next, each needing the owner's go:** push `main`, then update the integration on the owner's server to 0.4.1 and restart.
+
 ## Where the card redesign stands (Phase 4)
 
 On 2026-11-12 the owner asked to rethink the card so it uses Home Assistant's own controls, such as sliders for brightness and temperature, instead of the plain boxes the Phase 3 form has. Making new device types easy to add comes later.
@@ -34,7 +65,7 @@ No loading recipe was needed on 2026.10.0. The controls were already defined for
 
 ### Where Phase 4 stands
 
-Phase 4 is built and committed on the owner's desktop. It is not pushed and not on any server. The integration version is 0.4.0.
+Phase 4 is version 0.4.0. The owner pushed it and put it on the owner's server on 2026-11-13.
 
 - All 8 tasks of the plan are done. One session built them on 2026-11-13, and one fresh reviewer then read the whole change.
 - Tests: 149 rules and translation tests, 246 Home Assistant tests (run in WSL), and 91 card tests (53 for the logic, 6 for the connection, 32 for the card's face and form).
@@ -96,7 +127,7 @@ The builder graded the findings again by what a person would meet, and fixed the
 - Tests don't notice if the card's own switch moves on the tap, if Cancel does nothing, or if the switches stay usable while a change is being sent.
 - The form's stand-in elements differ from the real ones: the stand-in dialog reports closing at once, and the real picker reports a choice three times.
 - The sliders, the minutes box and the before or after dropdown have no names for a screen reader. The 0.3.0 form named its boxes.
-- A browser tab still running the 0.3.0 card after the server updates keeps a working card, but its form is refused until the page is reloaded.
+- A browser tab still running the 0.3.0 card after the server updates draws its form wrongly: each action shows as "[object Object]". The owner met this on 2026-11-13. See version 0.4.1 at the top.
 - Pressing Escape while a save is being refused loses the refusal sentence, as in 0.3.0.
 - If someone else changes the step being edited, the form keeps its own values, Save overwrites theirs, and nothing says so.
 - A script that loses its label while its form is open can't be retimed until the form is reopened.
@@ -114,11 +145,11 @@ The builder graded the findings again by what a person would meet, and fixed the
 
 ### Next for Phase 4, each needing the owner's go
 
-1. Push `main`.
-2. Update the integration on the owner's server to 0.4.0 and restart.
+1. Push `main`. Done 2026-11-13.
+2. Update the integration on the owner's server to 0.4.0 and restart. Done 2026-11-13.
 3. The owner tries the form on the owner's dashboard, as the owner and as a household member, on a phone.
 
-**Version 0.3.0 is on the owner's server.** Read from the server on 2026-11-13: the integration reports 0.3.0 and the routine is loaded. The Phase 3 section below was written before that.
+**Version 0.3.0 was on the owner's server before Phase 4.** Read from the server on 2026-11-13, before the update: the integration reported 0.3.0 and the routine was loaded. The Phase 3 section below was written before that.
 
 **Decided by the owner, from mockups:**
 

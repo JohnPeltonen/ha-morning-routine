@@ -70,6 +70,7 @@ Then open `http://localhost:8123/try-card`. The accounts are `tester` (admin) an
 - `rules.py` never imports `homeassistant`. All alarm decisions live there and are tested locally.
 - Forms and service schemas use `probatio`, not `voluptuous`.
 - snake_case, PascalCase classes, UPPER_CASE constants, `logger = logging.getLogger(__name__)` with %-style formatting, `T | None`, minimal docstrings.
+- The version is in two places: `manifest.json` and `CARD_VERSION` in the card file. Change both together. A card test compares them.
 - `strings.json` and `translations/en.json` must hold the same text. `tests/test_translations.py` compares them.
 
 ## Git

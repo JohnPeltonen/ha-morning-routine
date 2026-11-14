@@ -3,6 +3,9 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 
+// Read before any registry exists, so this copy of the card draws nothing.
+import { CARD_VERSION } from "../../custom_components/morning_routine/www/morning-routine-card.js";
+
 mock.timers.enable({ apis: ["setTimeout"] });
 
 const CARD_FILE = "../../custom_components/morning_routine/www/morning-routine-card.js";
@@ -695,4 +698,45 @@ test("open controls get the newest hass", async () => {
   card.hass = newer;
 
   assert.equal(selectorWith(card, "entity").hass, newer);
+});
+
+// ----- A card older or newer than the server -----
+
+const RELOAD = /Morning Routine was updated\. Reload this page to finish the update\./;
+
+test("a card whose version differs from the server's draws only the sentence that asks for a reload", async () => {
+  const { card } = await mount(await freshCard(ALL_CONTROLS), viewOf({ version: "0.0.1", steps: [HALL_STEP] }));
+
+  assert.match(card.shadowRoot.text, RELOAD);
+  assert.match(card.shadowRoot.text, /Test routine/);
+  assert.equal(byKey(card, "routine"), undefined);
+  assert.equal(byKey(card, "add"), undefined);
+  assert.equal(byKey(card, "name:h1"), undefined);
+});
+
+test("a card whose version matches the server's draws as usual", async () => {
+  const { card } = await mount(await freshCard(ALL_CONTROLS), viewOf({ version: CARD_VERSION }));
+
+  assert.doesNotMatch(card.shadowRoot.text, RELOAD);
+  assert.notEqual(byKey(card, "routine"), undefined);
+});
+
+test("a server that sends no version gets a card that draws as usual", async () => {
+  const { card } = await mount(await freshCard(ALL_CONTROLS), viewOf());
+
+  assert.doesNotMatch(card.shadowRoot.text, RELOAD);
+  assert.notEqual(byKey(card, "routine"), undefined);
+});
+
+test("the form closes when the server is updated while it is open, and the card asks for a reload", async () => {
+  const { card, connection } = await mount(await freshCard(ALL_CONTROLS), viewOf({ version: CARD_VERSION }));
+  await openForm(card);
+  assert.equal(dialogOf(card).open, true);
+
+  connection.push(viewOf({ version: "9.9.9" }));
+  await settle();
+
+  assert.equal(dialogOf(card).open, false);
+  assert.match(card.shadowRoot.text, RELOAD);
+  assert.equal(byKey(card, "add"), undefined);
 });
