@@ -237,6 +237,8 @@ Routines run independently. Two routines can run the same script on one morning,
 
 ## The card
 
+Since version 0.4.0 the card's switches, clock dropdown and add-a-step form are drawn with Home Assistant's own controls. That change is described in [2026-11-12-card-uses-home-assistant-controls-design.md](2026-11-12-card-uses-home-assistant-controls-design.md).
+
 The owner chose this layout from mockups. **Everything is relative to the alarm.** No clock times appear anywhere, because the integration can't always know when the alarm is: a real alarm can be hidden, as described above. Don't add a "next alarm" line.
 
 ```

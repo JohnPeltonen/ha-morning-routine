@@ -58,7 +58,10 @@ routine: 0123456789abcdef0123456789abcdef
 The card shows the routine as a timeline. Steps before the alarm are above the word Alarm, and steps at or after it are below.
 
 - **The switch at the top** turns the whole routine on or off.
-- **+ Add a step** opens a form. Choose what should happen, and how many minutes before or after the alarm. A step can be up to 720 minutes before the alarm and up to 60 minutes after it. The search box narrows the list.
+- **+ Add a step** opens a form built from Home Assistant's own controls. Choose what should happen from the list, which has a search box. Then choose how many minutes before or after the alarm. A step can be up to 720 minutes before the alarm and up to 60 minutes after it.
+  - A light or a thermostat that can be turned on and off shows **Turn on** and **Turn off** buttons.
+  - A setting that can be left out, such as a light's brightness, has a checkbox. Tick it to get a slider. Leave it unticked and the setting is left as it was.
+  - Each slider runs between the device's own lowest and highest setting. The box beside it takes a typed number.
 - **Tap a step's name** to change its time, change what it does, or remove it.
 - **The switch beside a step** turns that one step off without removing it.
 - **Skip next alarm** and **Clock to watch** work the same as the entities above.
@@ -67,8 +70,8 @@ Each step runs once per alarm.
 
 ### What a step can be
 
-- **A light.** Turn it on or off. Turning on can set a brightness from 1 to 100 percent if the light dims. Leave it empty and the light comes on as it was last.
-- **A thermostat with one temperature,** such as a heater. Turn it on or off. Turning on can set a temperature. Leave it empty and it starts at its last setting.
+- **A light.** Turn it on or off. Turning on can set a brightness from 1 to 100 percent if the light dims. Leave Brightness unticked and the light comes on as it was last.
+- **A thermostat with one temperature,** such as a heater. Turn it on or off. Turning on can set a temperature. Leave Temperature unticked and it starts at its last setting.
 - **A thermostat with a "heat to" and a "cool to" temperature.** The step sets both. It doesn't turn the thermostat on or off. In heat mode only "heat to" is used, and in cool mode only "cool to". If the thermostat is off, the step fails and changes nothing.
 - **A script, scene or automation** that has the "morning routine" label. Each can be a step once per routine.
 
@@ -81,6 +84,8 @@ Other device types, such as switches, locks and garage doors, can't be steps. Pu
 If something needs attention, the card says so in a sentence. For example, it says when no clock is chosen, or when a step's script or device was deleted.
 
 If the card doesn't appear in the card list after an update, refresh the browser, or close and reopen the Home Assistant app.
+
+The card's switches and its form use controls that are part of Home Assistant. If a later Home Assistant release moves them, the card still shows the routine and its switches still work, drawn in the card's own style. The form then says "This form couldn't load Home Assistant's controls." Please open an issue if you see that.
 
 ## For admins and scripts
 

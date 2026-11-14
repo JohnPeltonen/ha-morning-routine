@@ -32,6 +32,62 @@ No loading recipe was needed on 2026.10.0. The controls were already defined for
 
 **Found while proving it:** on one first page load after logging in, the card registered itself before Home Assistant swapped in its own element registry, and the dashboard showed "Configuration error" in place of the card until the page was reloaded. Four reloads afterwards were fine. This is in version 0.3.0 too. Phase 4 fixes it.
 
+### Where Phase 4 stands
+
+Phase 4 is built and committed on the owner's desktop. It is not pushed and not on any server. The integration version is 0.4.0.
+
+- Tasks 1 to 7 of the plan are done. One session built them on 2026-11-13.
+- Tests: 149 rules and translation tests, 243 Home Assistant tests (run in WSL), and 85 card tests (51 for the logic, 6 for the connection, 28 for the card's face and form).
+- The new card was used in a browser in the throwaway Home Assistant 2026.10.0, 360 pixels wide, as the admin account in the light theme and as the normal account in the dark theme. Done there: the routine, skip and step switches, the clock dropdown, adding a light with a brightness, adding the same light turning off, adding a one-temperature thermostat with a temperature, adding a range thermostat without moving a slider, both refusals shown as sentences, editing, retiming, and removing. Pressing Enter in a number box did not save. Nothing was logged to the browser console by the card.
+- Not checked: the owner's server, which runs a newer Home Assistant. A real phone. A screen reader. The loading recipe, because nothing was missing. A house with hundreds of devices.
+
+### What Phase 4 changed
+
+- `devices.py` describes each light and thermostat as a list of actions, each with its settings in Home Assistant's selector format, with limits, step size and a start value from the device. It also writes each step's detail line.
+- `step_input.py` checks a device step against that same description.
+- The view sends the description with each item and the detail line with each step. The step type, the per-item flags and the temperature unit are gone from the view.
+- The card's form keeps its state in one plain object that only a few small functions change. What is saved is worked out from the same state the form is drawn from.
+- The card uses Home Assistant's switch, dropdown, entity picker, toggle buttons, checkbox, slider and buttons. The card's face uses its own switch and dropdown when Home Assistant's aren't there.
+- `tests/try/` starts a throwaway Home Assistant with made-up devices for trying the card.
+
+### Decisions made while building Phase 4
+
+Each says what was decided, why, and what it costs if wrong.
+
+1. **The owner's server is only touched after the build.** The Home Assistant tests and the builder's browser checks ran in WSL. The owner was away, and every change to the server needs the owner present. Cost: the first look on the owner's Home Assistant version comes late.
+2. **A thermostat that reports no limits is held to Home Assistant's own:** 45 to 95 in Fahrenheit, 7 to 35 in Celsius. A slider needs limits, and a real thermostat always reports them. Cost: this is one check the design didn't list. It only affects a hand-made state with no limits.
+3. **A number typed outside a slider's limits is sent as typed,** and the server's refusal sentence is shown. Home Assistant's number box passes it on. Cost: one extra tap on Save to learn the limit.
+4. **Save is off while a slider's number box is empty.** An emptied box reports no value, and saving then would leave the setting out while the form shows it ticked.
+5. **A routine with no clock chosen keeps the card's own dropdown.** Home Assistant's dropdown has no "Choose a clock" entry. Cost: that one dropdown looks different until a clock is chosen.
+6. **A step the item can no longer show is locked.** The form shows its name, its detail line and a sentence, and only its time can change. This covers an action the item no longer offers, a setting it no longer offers, and a saved value outside its current limits. Cost: to change such a step, a person removes it and adds it again.
+7. **When a new view changes what the form shows, the form redraws and says so.** A value outside new limits moves to the nearest limit. Cost: a person may see a slider move by itself, with the sentence beside it.
+8. **The When row wraps onto two lines on a narrow screen.** "before the alarm" was cut off at 360 pixels.
+9. **The loading recipe is kept though it wasn't needed.** On 2026.10.0 the controls were already defined. Cost: an untested path. If it fails, the card's face still works and the form shows its sentence.
+10. **The card and its form were committed together,** and their tests are in a new file, `tests/card/card-form.test.mjs`, with its own stand-in elements.
+
+### Found and fixed while building Phase 4
+
+Each has a test that failed first.
+
+- **The card could register too early** and show "Configuration error" until a reload (see above). It now registers again once Home Assistant's own root element is defined.
+- **A tap on a switch could leave the card stuck.** After a tap the card puts keyboard focus back where it was. Home Assistant's switch threw when asked for focus before it had drawn itself, the redraw failed, and no switch worked until a reload. This was found in the browser, not by a test.
+- **A skipped part of the form was drawn as the word "false".** Found in a screenshot.
+
+### Card text added or changed in Phase 4, for the owner to check
+
+- "This form couldn't load Home Assistant's controls. Reload the page to try again."
+- "This item changed while the form was open. Check the settings before saving."
+- "What this step does can't be changed here, because the item no longer offers it. Its time can still be changed."
+- "Turn on", "Turn off" are now buttons. "Heat to", "Cool to", "Brightness" and "Temperature" are now labels beside a slider or a checkbox. The hints "as it was" and "last setting" now show beside an unticked checkbox.
+- The minutes box now shows the word "minutes" inside it.
+- Gone: "Search" and "Choose one". Home Assistant's picker has its own search box and its own "Select an entity" text, which this integration doesn't control.
+
+### Next for Phase 4, each needing the owner's go
+
+1. Push `main`.
+2. Update the integration on the owner's server to 0.4.0 and restart.
+3. The owner tries the form on the owner's dashboard, as the owner and as a household member, on a phone.
+
 **Version 0.3.0 is on the owner's server.** Read from the server on 2026-11-13: the integration reports 0.3.0 and the routine is loaded. The Phase 3 section below was written before that.
 
 **Decided by the owner, from mockups:**
