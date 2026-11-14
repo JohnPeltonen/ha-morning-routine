@@ -44,7 +44,10 @@
   </head>
   <body>
     <!-- The card with a fake server, for looking at it in a browser. Names are made up.
-         Serve the repo root (python -m http.server) and open /tests/card/demo.html -->
+         Serve the repo root (python -m http.server) and open /tests/card/demo.html
+         Home Assistant's controls only exist inside Home Assistant. So this page shows the card
+         with its own switches and dropdown, and its form says the controls couldn't be loaded.
+         To see the real form, use the throwaway Home Assistant in tests/try. -->
     <div id="cases"></div>
     <div id="holder"></div>
     <div id="log"></div>
@@ -64,37 +67,51 @@
         },
       );
 
+      // Items as the server's view sends them: what a step can do, each setting as a selector.
+      const slider = (min, max, unit) => ({ number: { min, max, step: 1, mode: "slider", unit_of_measurement: unit } });
+      const turnOff = { action: "turn_off", name: "Turn off", settings: [] };
+      const turnOn = (settings = []) => ({ action: "turn_on", name: "Turn on", settings });
+      const run = [{ action: "run", name: "Run", settings: [] }];
+      const brightness = { key: "brightness", name: "Brightness", optional: true, hint: "as it was", start: 100, selector: slider(1, 100, "%") };
+      const temperature = { key: "temperature", name: "Temperature", optional: true, hint: "last setting", start: 70, selector: slider(50, 90, "°F") };
       const ITEMS = [
-        { item: "light.bedside_lamp", name: "Bedside lamp", type: "light", actions: ["turn_on", "turn_off"], brightness: true },
-        { item: "light.porch", name: "Porch light", type: "light", actions: ["turn_on", "turn_off"], brightness: false },
-        {
-          item: "climate.bathroom_heater",
-          name: "Bathroom heater",
-          type: "thermostat",
-          actions: ["turn_on", "turn_off"],
-          temperature: true,
-          min_temp: 50,
-          max_temp: 90,
-        },
+        { item: "light.bedside_lamp", name: "Bedside lamp", actions: [turnOn([brightness]), turnOff] },
+        { item: "light.porch", name: "Porch light", actions: [turnOn(), turnOff] },
+        { item: "climate.bathroom_heater", name: "Bathroom heater", actions: [turnOn([temperature]), turnOff] },
         {
           item: "climate.hallway",
           name: "Hallway thermostat",
-          type: "thermostat_range",
-          actions: ["set_temperature"],
-          min_temp: 45,
-          max_temp: 95,
+          actions: [
+            {
+              action: "set_temperature",
+              name: "Set temperatures",
+              settings: [
+                { key: "heat_to", name: "Heat to", optional: false, start: 62, selector: slider(45, 95, "°F") },
+                { key: "cool_to", name: "Cool to", optional: false, start: 78, selector: slider(45, 95, "°F") },
+              ],
+            },
+          ],
         },
-        { item: "scene.kitchen_lights_dim", name: "Kitchen lights dim", type: "run" },
-        { item: "script.open_the_blinds", name: "Open the blinds", type: "run" },
-        { item: "script.play_the_radio", name: "Play the radio", type: "run" },
-        { item: "script.start_the_heater", name: "Start the heater", type: "run" },
+        { item: "scene.kitchen_lights_dim", name: "Kitchen lights dim", actions: run },
+        { item: "script.open_the_blinds", name: "Open the blinds", actions: run },
+        { item: "script.play_the_radio", name: "Play the radio", actions: run },
+        { item: "script.start_the_heater", name: "Start the heater", actions: run },
       ];
-      const found = (item) => ITEMS.find((entry) => entry.item === item) || { name: item, type: null };
+      const runs = (entry) => Boolean(entry.actions) && entry.actions[0].action === "run";
+      const found = (item) => ITEMS.find((entry) => entry.item === item) || { name: item };
+      // The detail line, which the real server writes.
+      const detailOf = (entry) => {
+        if (entry.action === "turn_off") return "Turn off";
+        if (entry.action === "set_temperature") return `Heat to ${entry.heat_to}°F, cool to ${entry.cool_to}°F`;
+        if (entry.action !== "turn_on") return "";
+        if (entry.brightness != null) return `Turn on at ${entry.brightness}%`;
+        return entry.temperature != null ? `Turn on at ${entry.temperature}°F` : "Turn on";
+      };
       let nextId = 1;
       // A step as the server's view sends it. `extra` holds an id, an action and settings.
       const step = (item, offset_minutes, enabled = true, available = true, extra = {}) => {
         const entry = found(item);
-        const isRun = entry.type === "run" || (!extra.action && !entry.type);
+        const isRun = runs(entry) || (!extra.action && !entry.actions);
         return {
           id: isRun ? item : extra.id || `id${nextId++}`,
           item,
@@ -102,12 +119,12 @@
           offset_minutes,
           enabled,
           available,
-          type: entry.type,
           action: isRun ? "run" : extra.action,
           brightness: extra.brightness ?? null,
           temperature: extra.temperature ?? null,
           heat_to: extra.heat_to ?? null,
           cool_to: extra.cool_to ?? null,
+          detail: isRun ? "" : detailOf(extra),
         };
       };
       const baseView = () => ({
@@ -126,7 +143,6 @@
           step("scene.kitchen_lights_dim", 0, false),
         ],
         items: ITEMS.map((entry) => ({ ...entry })),
-        temperature_unit: "°F",
         problems: [],
         min_offset_minutes: -720,
         max_offset_minutes: 60,
@@ -207,7 +223,7 @@
         "No labelled items": () =>
           reset((view) => {
             view.steps = [];
-            view.items = view.items.filter((entry) => entry.type !== "run");
+            view.items = view.items.filter((entry) => !runs(entry));
           }),
         "Device steps": () =>
           reset((view) => {
@@ -222,7 +238,7 @@
         "A device that's gone": () =>
           reset((view) => {
             view.steps = [
-              { ...step("light.bedside_lamp", -10, true, false, { id: "on", action: "turn_on", brightness: 30 }), type: null },
+              step("light.bedside_lamp", -10, true, false, { id: "on", action: "turn_on", brightness: 30 }),
               step("script.play_the_radio", 0),
             ];
             view.items = view.items.filter((entry) => entry.item !== "light.bedside_lamp");
@@ -267,7 +283,7 @@
         "Nothing left to add": () =>
           reset((view) => {
             view.items = view.items.filter(
-              (entry) => entry.type === "run" && view.steps.some((used) => used.item === entry.item),
+              (entry) => runs(entry) && view.steps.some((used) => used.item === entry.item),
             );
           }),
         "No routine chosen": () => card.setConfig({ type: "custom:morning-routine-card", routine: "" }),

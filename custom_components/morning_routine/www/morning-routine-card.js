@@ -283,7 +283,9 @@ export function problemText(code) {
 // ---------------------------------------------------------------------------
 
 if (globalThis.customElements) {
+  const TAG = "morning-routine-card";
   const RETRY_MS = 10000;
+  const CONTROLS_WAIT_MS = 5000;
   const SUBTITLE = "Runs around each alarm from the clock below, only when this phone is home";
   const TEXT_NO_ROUTINE = "Choose a routine in this card's settings.";
   const TEXT_UNAVAILABLE = "This routine isn't available. It may have been removed.";
@@ -293,14 +295,23 @@ if (globalThis.customElements) {
     'There is nothing to add yet. A step can be a light, a thermostat, or a script, scene or automation that an admin gave the "morning routine" label.';
   const TEXT_LABEL_NOTE =
     'Scripts, scenes and automations appear here once an admin gives them the "morning routine" label.';
-  const FIELD_TEXT = {
-    brightness: { label: "Brightness", hint: "as it was", unit: () => "%" },
-    temperature: { label: "Temperature", hint: "last setting", unit: (view) => view.temperature_unit || "" },
-    heat_to: { label: "Heat to", hint: "", unit: (view) => view.temperature_unit || "" },
-    cool_to: { label: "Cool to", hint: "", unit: (view) => view.temperature_unit || "" },
-  };
   const TEXT_NOT_SAVED = "That change couldn't be saved.";
   const TEXT_CHOICE_GONE = "That choice is no longer available. Choose again.";
+  const TEXT_ITEM_CHANGED = "This item changed while the form was open. Check the settings before saving.";
+  const TEXT_LOCKED =
+    "What this step does can't be changed here, because the item no longer offers it. Its time can still be changed.";
+  const TEXT_NO_CONTROLS = "This form couldn't load Home Assistant's controls. Reload the page to try again.";
+
+  // Home Assistant's own controls. It doesn't promise them to custom cards, so the card checks
+  // for each one and never relies on one it hasn't seen.
+  const CONTROL_TAGS = ["ha-selector", "ha-switch", "ha-checkbox", "ha-formfield", "ha-button"];
+  // ha-selector loads the element for a type of selector the first time it draws one.
+  const SELECTOR_TYPES = {
+    "ha-selector-entity": { entity: { include_entities: [] } },
+    "ha-selector-number": { number: { min: 0, max: 1, mode: "box" } },
+    "ha-selector-select": { select: { mode: "dropdown", options: [] } },
+    "ha-selector-button_toggle": { button_toggle: { options: [] } },
+  };
 
   const STYLE = `
     :host { display: block; }
@@ -311,7 +322,7 @@ if (globalThis.customElements) {
     .title { font-size: 17px; font-weight: 500; overflow-wrap: anywhere; }
     .note { color: var(--secondary-text-color); font-size: 13px; margin: 6px 0 0; overflow-wrap: anywhere; }
     .only { margin: 0; padding: 16px; color: var(--secondary-text-color); }
-    .step { display: grid; grid-template-columns: 86px 20px minmax(0, 1fr) 36px; column-gap: 8px; align-items: start; min-height: 50px; }
+    .step { display: grid; grid-template-columns: 86px 20px minmax(0, 1fr) auto; column-gap: 8px; align-items: start; min-height: 50px; }
     .step.last { min-height: 30px; }
     .when { color: var(--secondary-text-color); font-size: 12.5px; text-align: right; padding-top: 1px; }
     .line { position: relative; align-self: stretch; }
@@ -327,28 +338,30 @@ if (globalThis.customElements) {
     .alarm-name { font-size: 14.5px; font-weight: 500; }
     .step .note { margin: 2px 0 10px; font-size: 12.5px; }
     .text-button { font: inherit; font-weight: 500; color: var(--primary-color); background: none; border: 0; padding: 8px; margin: 0; cursor: pointer; border-radius: 4px; }
-    .text-button.quiet { color: var(--secondary-text-color); }
     .text-button:disabled { opacity: 0.5; cursor: default; }
     .add { display: block; margin: 2px auto 0; }
-    .label { display: block; color: var(--secondary-text-color); font-size: 12.5px; margin: 12px 0 6px; }
-    select, input.minutes, input.search { font: inherit; color: var(--primary-text-color); background: var(--card-background-color); border: 1px solid var(--divider-color); border-bottom-color: var(--secondary-text-color); border-radius: 4px 4px 0 0; padding: 9px 10px; box-sizing: border-box; min-width: 0; }
+    .label { display: block; color: var(--secondary-text-color); font-size: 12.5px; margin: 16px 0 6px; }
+    select { font: inherit; color: var(--primary-text-color); background: var(--card-background-color); border: 1px solid var(--divider-color); border-bottom-color: var(--secondary-text-color); border-radius: 4px 4px 0 0; padding: 9px 10px; box-sizing: border-box; min-width: 0; }
     select.wide { width: 100%; }
-    input.minutes { width: 64px; }
-    input.search { width: 100%; margin-bottom: 6px; }
-    .setting-row { display: flex; align-items: center; gap: 8px; }
     select:disabled { opacity: 0.5; }
+    ha-selector { display: block; }
     input.switch { appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 36px; height: 20px; margin: 0; border-radius: 10px; cursor: pointer; background: color-mix(in srgb, var(--secondary-text-color) 55%, transparent); transition: background 0.15s; }
     input.switch::before { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--card-background-color); box-shadow: 0 0 2px rgba(0, 0, 0, 0.5); transition: left 0.15s; }
     input.switch:checked { background: var(--primary-color); }
     input.switch:checked::before { left: 18px; }
     input.switch:disabled { opacity: 0.5; cursor: default; }
     :focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-    dialog { color: var(--primary-text-color); background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 12px; padding: 16px; width: min(340px, calc(100vw - 48px)); box-sizing: border-box; font-size: 14px; line-height: 1.35; }
+    dialog { color: var(--primary-text-color); background: var(--ha-dialog-surface-background, var(--card-background-color)); border: 0; border-radius: var(--ha-dialog-border-radius, 24px); padding: 24px; width: min(400px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow-y: auto; box-sizing: border-box; font-size: 14px; line-height: 1.35; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); }
     dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
-    dialog form { margin: 0; }
-    .when-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .when-row select { flex: 1 1 130px; }
-    .buttons { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: 16px; }
+    dialog .title { font-size: 22px; font-weight: 400; }
+    .locked-name { font-size: 16px; }
+    .check-row { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+    .check-row .note { margin: 0; }
+    .when-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+    .when-row ha-selector { flex: 1 1 110px; min-width: 0; }
+    .when-row ha-selector:last-child { flex: 2 1 190px; }
+    .message { min-height: 18px; margin-top: 12px; }
+    .buttons { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
     .buttons .spacer { flex: 1; }
   `;
 
@@ -367,6 +380,11 @@ if (globalThis.customElements) {
     return element;
   }
 
+  // Replaces what an element holds, leaving out any part that was skipped with false or null.
+  function fill(element, ...children) {
+    element.replaceChildren(...children.flat().filter((child) => child !== false && child !== null && child !== undefined));
+  }
+
   function quietly(unsubscribe) {
     if (!unsubscribe) return;
     try {
@@ -374,6 +392,51 @@ if (globalThis.customElements) {
     } catch {
       // The server had already dropped it.
     }
+  }
+
+  // One of Home Assistant's controls can't take focus until it has drawn itself, and throws if
+  // asked sooner. Drawing the card must never fail over where the keyboard focus goes.
+  function focusWhenDrawn(control) {
+    Promise.resolve(control.updateComplete)
+      .then(() => control.focus())
+      .catch(() => {});
+  }
+
+  const allDefined = (tags) => tags.every((tag) => customElements.get(tag));
+  const whenAllDefined = (tags) => Promise.all(tags.map((tag) => customElements.whenDefined(tag)));
+
+  async function tryToLoadControls(holder, hass) {
+    if (!allDefined(CONTROL_TAGS)) {
+      // The known way to get them loaded: ask one of Home Assistant's own cards for its editor.
+      const helpers = await window.loadCardHelpers();
+      const card = await helpers.createCardElement({ type: "entities", entities: [] });
+      await card.constructor.getConfigElement();
+      await whenAllDefined(CONTROL_TAGS);
+    }
+    // Drawing one hidden selector of each type makes ha-selector load that type's element.
+    const warmers = Object.values(SELECTOR_TYPES).map((selector) => h("ha-selector", { hass, selector, hidden: true }));
+    holder.append(...warmers);
+    await whenAllDefined(Object.keys(SELECTOR_TYPES));
+    return true;
+  }
+
+  let controls = null;
+  // Loads Home Assistant's controls once for the page. Resolves to whether the card may use them.
+  // It never throws: a card must still work when they can't be had.
+  function loadControls(holder, hass) {
+    if (!controls) {
+      let giveUp;
+      const gaveUp = new Promise((resolve) => {
+        giveUp = setTimeout(() => resolve(false), CONTROLS_WAIT_MS);
+      });
+      controls = Promise.race([tryToLoadControls(holder, hass), gaveUp])
+        .catch(() => false)
+        .finally(() => {
+          clearTimeout(giveUp);
+          holder.replaceChildren();
+        });
+    }
+    return controls;
   }
 
   class MorningRoutineCard extends HTMLElement {
@@ -402,6 +465,9 @@ if (globalThis.customElements) {
       this._busy = false;
       this._refused = null;
       this._form = null;
+      // Null while Home Assistant's controls are loading, then whether the card may use them.
+      this._controls = null;
+      this._controlsAsked = false;
       this._onReady = () => {
         // The connection came back. The old subscription is gone with the old connection.
         this._generation += 1;
@@ -416,7 +482,8 @@ if (globalThis.customElements) {
           this._form = null;
         },
       });
-      this.shadowRoot.append(h("style", {}, STYLE), this._card, this._dialog);
+      this._holder = h("div", { hidden: true });
+      this.shadowRoot.append(h("style", {}, STYLE), this._card, this._dialog, this._holder);
     }
 
     setConfig(config) {
@@ -441,6 +508,9 @@ if (globalThis.customElements) {
         this._connection = hass.connection;
         if (this._connection.addEventListener) this._connection.addEventListener("ready", this._onReady);
       }
+      // Home Assistant's controls read what they show from hass, so open ones get each new one.
+      for (const control of this._dialog.querySelectorAll("ha-selector")) control.hass = hass;
+      this._askForControls();
       this._subscribe();
     }
 
@@ -457,6 +527,16 @@ if (globalThis.customElements) {
       this._stop();
       this._forgetConnection();
       this._closeForm();
+    }
+
+    _askForControls() {
+      if (this._controlsAsked || !this.isConnected) return;
+      this._controlsAsked = true;
+      loadControls(this._holder, this._hass).then((loaded) => {
+        this._controls = loaded;
+        this._render();
+        if (this._form) this._drawForm();
+      });
     }
 
     _forgetConnection() {
@@ -522,12 +602,13 @@ if (globalThis.customElements) {
         return;
       }
       if (!event || !event.view) return;
+      const before = this._view;
       this._view = event.view;
       this._title = event.view.title;
       this._unavailable = false;
       this._refused = null;
       this._render();
-      this._refreshForm();
+      if (before) this._refreshForm(before);
     }
 
     _showUnavailable() {
@@ -565,7 +646,22 @@ if (globalThis.customElements) {
       return saved;
     }
 
+    // A switch shows what the server's view says. A tap asks for the change and puts the switch
+    // back, so it moves only when the next view says so. Home Assistant's switch is used when it
+    // exists, and the card's own otherwise: the switches must work whatever else fails to load.
     _switch(key, label, checked, change) {
+      if (customElements.get("ha-switch")) {
+        return h("ha-switch", {
+          "aria-label": label,
+          "data-key": key,
+          checked,
+          disabled: this._busy,
+          onchange: (event) => {
+            event.target.checked = checked;
+            change(!checked);
+          },
+        });
+      }
       return h("input", {
         type: "checkbox",
         role: "switch",
@@ -575,9 +671,24 @@ if (globalThis.customElements) {
         checked,
         disabled: this._busy,
         onclick: (event) => {
-          // The switch moves when the server's next view says so, not on the tap.
           event.preventDefault();
           change(!checked);
+        },
+      });
+    }
+
+    // One of Home Assistant's controls, described by a selector. It keeps showing the value it
+    // was last given, so each value it reports is given back to it.
+    _control(selector, value, change, props = {}) {
+      return h("ha-selector", {
+        hass: this._hass,
+        selector,
+        value,
+        ...props,
+        "onvalue-changed": (event) => {
+          event.stopPropagation();
+          event.currentTarget.value = event.detail.value;
+          change(event.detail.value);
         },
       });
     }
@@ -588,7 +699,7 @@ if (globalThis.customElements) {
       this._card.replaceChildren(...this._content());
       if (focusedKey) {
         for (const control of this._card.querySelectorAll("[data-key]")) {
-          if (control.getAttribute("data-key") === focusedKey) control.focus();
+          if (control.getAttribute("data-key") === focusedKey) focusWhenDrawn(control);
         }
       }
       this._syncFormButtons();
@@ -634,7 +745,7 @@ if (globalThis.customElements) {
         { class: "section" },
         rows.map((row, index) => {
           const edge = `${index === 0 ? " first" : ""}${index === rows.length - 1 ? " last" : ""}`;
-          return row.type === "alarm" ? this._alarmRow(edge) : this._stepRow(view, row.step, edge);
+          return row.type === "alarm" ? this._alarmRow(edge) : this._stepRow(row.step, edge);
         }),
         this._refused && h("p", { class: "note", role: "status" }, this._refused),
         canAdd &&
@@ -658,7 +769,7 @@ if (globalThis.customElements) {
       );
     }
 
-    _stepRow(view, step, edge) {
+    _stepRow(step, edge) {
       const state = !step.available ? " gone" : step.enabled ? "" : " off";
       const detail = step.detail;
       return h(
@@ -692,12 +803,6 @@ if (globalThis.customElements) {
     }
 
     _settingsSection(view) {
-      const options = view.clock_options.map((option) =>
-        h("option", { value: option.package, selected: option.package === view.clock }, option.name),
-      );
-      if (view.clock === null) {
-        options.unshift(h("option", { value: "", selected: true, disabled: true }, "Choose a clock"));
-      }
       return h(
         "div",
         { class: "section" },
@@ -710,24 +815,39 @@ if (globalThis.customElements) {
           ),
         ),
         h("label", { class: "label", for: "clock" }, "Clock to watch"),
-        h(
-          "select",
-          {
-            id: "clock",
-            class: "wide",
-            "data-key": "clock",
-            disabled: this._busy,
-            onchange: (event) => {
-              const clock = event.target.value;
-              if (clock) this._send({ type: "morning_routine/update", clock });
-            },
-          },
-          options,
-        ),
+        this._clockPicker(view),
+      );
+    }
+
+    _clockPicker(view) {
+      const choose = (clock) => {
+        if (clock) this._send({ type: "morning_routine/update", clock });
+      };
+      // Home Assistant's dropdown has no "choose one" entry, so a routine with no clock yet
+      // keeps the card's own dropdown.
+      if (this._controls === true && view.clock !== null) {
+        const options = view.clock_options.map((option) => ({ value: option.package, label: option.name }));
+        return this._control({ select: { mode: "dropdown", options } }, view.clock, choose, {
+          "data-key": "clock",
+          disabled: this._busy,
+        });
+      }
+      const options = view.clock_options.map((option) =>
+        h("option", { value: option.package, selected: option.package === view.clock }, option.name),
+      );
+      if (view.clock === null) {
+        options.unshift(h("option", { value: "", selected: true, disabled: true }, "Choose a clock"));
+      }
+      return h(
+        "select",
+        { id: "clock", class: "wide", "data-key": "clock", disabled: this._busy, onchange: (event) => choose(event.target.value) },
+        options,
       );
     }
 
     // ----- The step form -----
+    // The form is drawn from `this._form.state`, which only the form-state functions at the top of
+    // this file change. Save sends what formStep makes of that same state.
 
     _openForm(editingId) {
       const view = this._view;
@@ -735,203 +855,212 @@ if (globalThis.customElements) {
       const step = editingId === null ? null : view.steps.find((entry) => entry.id === editingId);
       if (editingId !== null && !step) return;
       const { minutes, direction } = step ? splitOffset(step.offset_minutes) : { minutes: 30, direction: "before" };
-
-      const search = h("input", {
-        class: "search",
-        type: "search",
-        autocomplete: "off",
-        placeholder: "Search",
-        "aria-label": "Search what should happen",
-        // Enter in a text box would submit the form, and searching must never save a step.
-        onkeydown: (event) => {
-          if (event.key === "Enter") event.preventDefault();
-        },
-        oninput: () => this._fillFormItems(this._form.item.value),
-      });
-      const item = h("select", {
-        id: "form-item",
-        class: "wide",
-        // Without this the dialog opens on the search box, and a phone raises its keyboard.
-        autofocus: true,
-        onchange: () => {
-          this._fillFormSettings();
-          this._syncFormButtons();
-        },
-      });
-      const labelNote = h("p", { class: "note" });
-      const settings = h("div");
-      const minutesBox = h("input", {
-        id: "form-minutes",
-        class: "minutes",
-        type: "text",
-        inputMode: "numeric",
-        autocomplete: "off",
-        value: String(minutes),
-        "aria-describedby": "form-error",
-      });
-      const directionBox = h(
-        "select",
-        { "aria-label": "Before or after the alarm" },
-        h("option", { value: "before", selected: direction === "before" }, "before the alarm"),
-        h("option", { value: "after", selected: direction === "after" }, "after the alarm"),
-      );
-      const error = h("p", { id: "form-error", class: "note", role: "status" });
-      const save = h("button", { type: "submit", class: "text-button" }, "Save");
-      const remove =
-        step && h("button", { type: "button", class: "text-button quiet", onclick: () => this._removeFromForm() }, "Remove step");
-
       this._form = {
-        editing: editingId,
-        search,
-        item,
-        labelNote,
-        settings,
-        settingsFor: null,
-        actionBox: null,
-        boxes: {},
-        minutesBox,
-        directionBox,
-        error,
-        save,
-        remove,
+        state: startForm(view, editingId),
+        minutes,
+        direction,
+        body: h("div"),
+        // Filled in when the form's controls are drawn.
+        picker: null,
+        settings: null,
+        message: null,
+        save: null,
+        remove: null,
       };
-      // A new step starts on "Choose one", so nothing is added by a stray tap on Save.
-      this._fillFormItems(step ? step.item : "");
-      this._fillFormSettings();
-      this._dialog.replaceChildren(
-        h(
-          "form",
-          {
-            method: "dialog",
-            onsubmit: (event) => {
-              event.preventDefault();
-              this._saveForm();
-            },
-          },
-          h("div", { class: "title" }, step ? "Edit step" : "Add a step"),
-          h("label", { class: "label", for: "form-item" }, "What should happen"),
-          search,
-          item,
-          labelNote,
-          settings,
-          h("label", { class: "label", for: "form-minutes" }, "When"),
-          h("div", { class: "when-row" }, minutesBox, h("span", {}, "minutes"), directionBox),
-          error,
-          h(
-            "div",
-            { class: "buttons" },
-            remove,
-            h("span", { class: "spacer" }),
-            h("button", { type: "button", class: "text-button", onclick: () => this._closeForm() }, "Cancel"),
-            save,
-          ),
-        ),
-      );
-      this._syncFormButtons();
+      this._dialog.replaceChildren(h("div", { class: "title" }, step ? "Edit step" : "Add a step"), this._form.body);
+      this._drawForm();
       this._dialog.showModal();
     }
 
-    _fillFormItems(selected) {
+    // Draws the whole form once: its controls when Home Assistant's are loaded, one sentence when
+    // they can't be had, and only Cancel while they are still loading.
+    _drawForm() {
       const form = this._form;
-      const items = formItems(this._view, form.editing);
-      const keep = chosenItem(items, selected);
-      const option = (entry) => h("option", { value: entry.item, selected: entry.item === keep }, entry.name);
-      const options = itemGroups(searchItems(items, form.search.value, keep)).map((group) =>
-        group.title ? h("optgroup", { label: group.title }, group.items.map(option)) : group.items.map(option),
-      );
-      if (keep === "") options.unshift(h("option", { value: "", selected: true, disabled: true }, "Choose one"));
-      form.item.replaceChildren(...options.flat());
-      form.labelNote.textContent = items.some((entry) => entry.type === "run") ? "" : TEXT_LABEL_NOTE;
-      return keep;
-    }
-
-    // The item the picker is on, with what it can do. Null when nothing is chosen.
-    _formEntry() {
-      const form = this._form;
-      return formItems(this._view, form.editing).find((entry) => entry.item === form.item.value) || null;
-    }
-
-    _formAction(entry) {
-      const form = this._form;
-      const choices = actionChoices(entry);
-      if (!choices.length) return null;
-      if (form.actionBox && choices.some((choice) => choice.action === form.actionBox.value)) {
-        return form.actionBox.value;
-      }
-      return choices[0].action;
-    }
-
-    // Draws the action and its settings for the chosen item. Only redrawn when the item or the
-    // action changes, so what was typed survives a new view from the server.
-    _fillFormSettings() {
-      const form = this._form;
-      const view = this._view;
-      const entry = this._formEntry();
-      const own = form.editing === null ? null : view.steps.find((step) => step.id === form.editing) || null;
-      const choices = actionChoices(entry);
-      const startsOnOwn = own && entry && own.item === entry.item && form.settingsFor === null;
-      const action =
-        startsOnOwn && choices.some((choice) => choice.action === own.action) ? own.action : this._formAction(entry);
-      const key = entry ? `${entry.item}|${action}` : "";
-      if (key === form.settingsFor) return;
-      form.settingsFor = key;
-      form.actionBox = null;
-      form.boxes = {};
-      if (!choices.length) {
-        form.settings.replaceChildren();
+      const cancel = (tag, props) => h(tag, { ...props, onclick: () => this._closeForm() }, "Cancel");
+      if (this._controls !== true) {
+        form.save = null;
+        form.remove = null;
+        fill(
+          form.body,
+          this._controls === false && h("p", { class: "note", role: "status" }, TEXT_NO_CONTROLS),
+          h("div", { class: "buttons" }, cancel("button", { type: "button", class: "text-button" })),
+        );
         return;
       }
-      form.actionBox = h(
-        "select",
-        {
-          id: "form-action",
-          class: "wide",
-          onchange: () => this._fillFormSettings(),
-        },
-        choices.map((choice) => h("option", { value: choice.action, selected: choice.action === action }, choice.text)),
+      const view = this._view;
+      form.picker = h("div");
+      form.settings = h("div");
+      form.message = h("p", { class: "note message", role: "status" });
+      form.save = h("ha-button", { onclick: () => this._saveForm() }, "Save");
+      form.remove =
+        form.state.editing !== null &&
+        h("ha-button", { appearance: "plain", onclick: () => this._removeFromForm() }, "Remove step");
+      const mostMinutes = Math.max(-view.min_offset_minutes, view.max_offset_minutes);
+      fill(
+        form.body,
+        h("div", { class: "label" }, "What should happen"),
+        form.picker,
+        form.settings,
+        h("div", { class: "label" }, "When"),
+        // This row is drawn once. What is typed in it is kept in the form, not in the state.
+        h(
+          "div",
+          { class: "when-row" },
+          this._control(
+            { number: { min: 0, max: mostMinutes, mode: "box", unit_of_measurement: "minutes" } },
+            form.minutes,
+            (value) => {
+              form.minutes = value;
+            },
+            { "data-setting": "minutes" },
+          ),
+          this._control(
+            {
+              select: {
+                mode: "dropdown",
+                options: [
+                  { value: "before", label: "before the alarm" },
+                  { value: "after", label: "after the alarm" },
+                ],
+              },
+            },
+            form.direction,
+            (value) => {
+              if (value) form.direction = value;
+            },
+            { "data-setting": "direction" },
+          ),
+        ),
+        form.message,
+        h("div", { class: "buttons" }, form.remove, h("span", { class: "spacer" }), cancel("ha-button", { appearance: "plain" }), form.save),
       );
-      const rows = [h("label", { class: "label", for: "form-action" }, "What to do"), form.actionBox];
-      const prefill = own && own.item === entry.item && own.action === action ? own : {};
-      for (const name of settingFields(entry, action)) {
-        const text = FIELD_TEXT[name];
-        const value = prefill[name];
-        const box = h("input", {
-          id: `form-${name}`,
-          class: "minutes",
-          type: "text",
-          inputMode: "decimal",
-          autocomplete: "off",
-          placeholder: text.hint,
-          value: value === null || value === undefined ? "" : String(value),
-          "aria-describedby": "form-error",
-        });
-        form.boxes[name] = box;
-        rows.push(
-          h("label", { class: "label", for: `form-${name}` }, text.label),
-          h("div", { class: "setting-row" }, box, h("span", {}, text.unit(view))),
-        );
-      }
-      form.settings.replaceChildren(...rows);
+      this._drawPicker();
+      this._drawSettings();
+      this._syncFormButtons();
     }
 
-    _refreshForm() {
+    _drawPicker() {
+      const form = this._form;
+      const view = this._view;
+      const state = form.state;
+      if (state.locked) {
+        const step = view.steps.find((entry) => entry.id === state.editing);
+        const gone = step.action === "run" ? TEXT_STEP_GONE : TEXT_DEVICE_GONE;
+        fill(
+          form.picker,
+          h("div", { class: "locked-name" }, step.name),
+          step.detail && h("p", { class: "note" }, step.detail),
+          h("p", { class: "note" }, formEntry(view, state) ? TEXT_LOCKED : gone),
+        );
+        return;
+      }
+      const items = formItems(view, state.editing);
+      fill(
+        form.picker,
+        this._control({ entity: { include_entities: items.map((entry) => entry.item) } }, state.item || undefined, (item) => {
+          const entry = formItems(this._view, form.state.editing).find((offered) => offered.item === item) || null;
+          form.state = withItem(form.state, entry);
+          this._say("");
+          this._drawSettings();
+          this._syncFormButtons();
+        }),
+        !items.some((entry) => entry.actions.some((action) => action.action === "run")) &&
+          h("p", { class: "note" }, TEXT_LABEL_NOTE),
+      );
+    }
+
+    // The action and its settings for the chosen item. Drawn again only when the item, the action,
+    // a tick or the list of settings changes, never because a slider reported a value.
+    _drawSettings() {
+      const form = this._form;
+      const state = form.state;
+      const entry = formEntry(this._view, state);
+      const action = state.locked ? null : actionOf(entry, state.action);
+      if (!action) {
+        fill(form.settings);
+        return;
+      }
+      const rows = [];
+      if (entry.actions.length > 1) {
+        const options = entry.actions.map((choice) => ({ value: choice.action, label: choice.name }));
+        rows.push(
+          h("div", { class: "label" }, "What to do"),
+          this._control({ button_toggle: { options } }, state.action, (chosen) => {
+            form.state = withAction(form.state, formEntry(this._view, form.state), chosen);
+            this._drawSettings();
+            this._syncFormButtons();
+          }),
+        );
+      }
+      for (const setting of action.settings) {
+        const slider = () =>
+          this._control(
+            setting.selector,
+            state.values[setting.key] ?? undefined,
+            (value) => {
+              form.state = withValue(form.state, setting.key, value);
+              this._syncFormButtons();
+            },
+            { "data-setting": setting.key },
+          );
+        if (!setting.optional) {
+          rows.push(h("div", { class: "label" }, setting.name), slider());
+          continue;
+        }
+        const ticked = state.checked[setting.key] === true;
+        const box = h("ha-checkbox", {
+          checked: ticked,
+          onchange: (event) => {
+            form.state = withChecked(form.state, setting, event.target.checked === true);
+            this._drawSettings();
+            this._syncFormButtons();
+          },
+        });
+        rows.push(
+          h(
+            "div",
+            { class: "check-row" },
+            h("ha-formfield", { label: setting.name }, box),
+            // What leaving the setting out means, such as "as it was".
+            !ticked && h("span", { class: "note" }, setting.hint),
+          ),
+          ticked && slider(),
+        );
+      }
+      fill(form.settings, rows);
+    }
+
+    _say(text) {
+      if (this._form && this._form.message) this._form.message.textContent = text;
+    }
+
+    // A new view arrived while the form is open.
+    _refreshForm(before) {
       const form = this._form;
       if (!form) return;
-      if (form.editing !== null && !this._view.steps.some((step) => step.id === form.editing)) {
+      if (form.state.editing !== null && !this._view.steps.some((step) => step.id === form.state.editing)) {
         // Someone else removed the step being edited.
         this._closeForm();
         return;
       }
-      const before = form.item.value;
-      if (this._fillFormItems(before) !== before) form.error.textContent = TEXT_CHOICE_GONE;
-      this._fillFormSettings();
+      if (this._controls !== true) return;
+      const offered = (view) => formItems(view, form.state.editing).map((entry) => entry.item).join();
+      const result = refreshed(form.state, before, this._view);
+      if (result.note === "choice_gone") this._say(TEXT_CHOICE_GONE);
+      if (result.note === "item_changed") this._say(TEXT_ITEM_CHANGED);
+      if (result.state !== form.state || offered(before) !== offered(this._view)) {
+        form.state = result.state;
+        this._drawPicker();
+        this._drawSettings();
+      }
       this._syncFormButtons();
     }
 
     _syncFormButtons() {
       const form = this._form;
-      if (!form) return;
-      form.save.disabled = this._busy || !form.item.value;
+      if (!form || !form.save) return;
+      const ready = formStep(form.state, formEntry(this._view, form.state)) !== null;
+      form.save.disabled = this._busy || !ready;
       if (form.remove) form.remove.disabled = this._busy;
     }
 
@@ -942,62 +1071,48 @@ if (globalThis.customElements) {
 
     async _saveForm() {
       const form = this._form;
-      if (!form || this._busy || !form.item.value) return;
-      const direction = form.directionBox.value;
-      const problem = offsetError(form.minutesBox.value, direction, this._view);
-      form.error.textContent = problem || "";
+      if (!form || this._busy) return;
+      const what = formStep(form.state, formEntry(this._view, form.state));
+      if (!what) return;
+      const typed = isNumber(form.minutes) ? String(form.minutes) : "";
+      const problem = offsetError(typed, form.direction, this._view);
+      this._say(problem || "");
       if (problem) return;
-      const entry = this._formEntry();
-      const own = form.editing === null ? null : this._view.steps.find((step) => step.id === form.editing) || null;
-      let what;
-      if (entry && entry.type === "run") {
-        what = { action: "run" };
-      } else if (actionChoices(entry).length) {
-        const action = this._formAction(entry);
-        const fields = Object.fromEntries(Object.entries(form.boxes).map(([name, box]) => [name, box.value]));
-        const settingsProblem = settingsError(entry, action, fields);
-        form.error.textContent = settingsProblem || "";
-        if (settingsProblem) return;
-        what = { action, ...settingsOf(entry, action, fields) };
-      } else if (own && own.item === form.item.value) {
-        // The step's own device is gone, so only its time can change. What it does stays as it was.
-        what = { action: own.action };
-        for (const name of ["brightness", "temperature", "heat_to", "cool_to"]) {
-          if (own[name] !== null && own[name] !== undefined) what[name] = own[name];
-        }
-      } else {
-        return;
-      }
-      const steps = withSaved(this._view, form.editing, {
-        item: form.item.value,
-        offset_minutes: joinOffset(Number(form.minutesBox.value.trim()), direction),
+      const steps = withSaved(this._view, form.state.editing, {
         ...what,
+        offset_minutes: joinOffset(form.minutes, form.direction),
       });
-      const saved = await this._send({ type: "morning_routine/set_steps", steps }, (text) => {
-        form.error.textContent = text;
-      });
+      const saved = await this._send({ type: "morning_routine/set_steps", steps }, (text) => this._say(text));
       if (saved && this._form === form) this._closeForm();
     }
 
     async _removeFromForm() {
       const form = this._form;
       if (!form || this._busy) return;
-      form.error.textContent = "";
-      const steps = withRemoved(this._view, form.editing);
-      const saved = await this._send({ type: "morning_routine/set_steps", steps }, (text) => {
-        form.error.textContent = text;
-      });
+      this._say("");
+      const steps = withRemoved(this._view, form.state.editing);
+      const saved = await this._send({ type: "morning_routine/set_steps", steps }, (text) => this._say(text));
       if (saved && this._form === form) this._closeForm();
     }
   }
 
-  if (!customElements.get("morning-routine-card")) {
-    customElements.define("morning-routine-card", MorningRoutineCard);
+  const register = () => {
+    if (!customElements.get(TAG)) customElements.define(TAG, MorningRoutineCard);
+  };
+  register();
+  // Home Assistant swaps in its own element registry while it starts. A card that loaded before
+  // the swap is unknown to the new registry, and the dashboard shows an error in its place.
+  // So the card registers again once Home Assistant's own root element exists.
+  if (customElements.whenDefined) {
+    customElements
+      .whenDefined("home-assistant")
+      .then(register)
+      .catch(() => {});
   }
   window.customCards = window.customCards || [];
-  if (!window.customCards.some((card) => card.type === "morning-routine-card")) {
+  if (!window.customCards.some((card) => card.type === TAG)) {
     window.customCards.push({
-      type: "morning-routine-card",
+      type: TAG,
       name: "Morning Routine",
       description: "Steps that run around a phone's alarm.",
     });
