@@ -125,39 +125,6 @@ def _brightness(attributes: Any) -> dict[str, Any]:
     return _setting("brightness", True, start, selector)
 
 
-def device_info(hass: HomeAssistant, entity_id: str) -> dict[str, Any] | None:
-    """What the card may offer for this device. None when it can't be offered right now."""
-    state = hass.states.get(entity_id)
-    if state is None or state.state == STATE_UNAVAILABLE:
-        return None
-    domain = entity_id.split(".", 1)[0]
-    attributes = state.attributes
-    if domain == "light":
-        modes = attributes.get("supported_color_modes") or []
-        return {
-            "type": "light",
-            "actions": ["turn_on", "turn_off"],
-            "brightness": any(mode != "onoff" for mode in modes),
-        }
-    if domain != "climate":
-        return None
-    features = attributes.get("supported_features") or 0
-    limits = {"min_temp": attributes.get("min_temp"), "max_temp": attributes.get("max_temp")}
-    if features & TARGET_TEMPERATURE_RANGE:
-        return {"type": "thermostat_range", "actions": ["set_temperature"], **limits}
-    actions = [
-        action for action, feature in (("turn_on", TURN_ON), ("turn_off", TURN_OFF)) if features & feature
-    ]
-    if not actions:
-        return None
-    return {
-        "type": "thermostat",
-        "actions": actions,
-        "temperature": bool(features & TARGET_TEMPERATURE),
-        **limits,
-    }
-
-
 def device_calls(hass: HomeAssistant, step: Step) -> list[tuple[str, str, dict[str, Any]]]:
     """The Home Assistant actions a device step sends, in order."""
     target = {"entity_id": step.item}

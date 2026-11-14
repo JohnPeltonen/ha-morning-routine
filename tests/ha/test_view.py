@@ -4,6 +4,7 @@ from homeassistant.helpers import entity_registry as er
 from support import ALARM
 
 from custom_components.morning_routine.clocks import GOOGLE_CLOCK
+from custom_components.morning_routine.devices import RUN_ACTIONS, describe_device
 from custom_components.morning_routine.rules import Step
 from custom_components.morning_routine.view import build_view
 
@@ -17,7 +18,7 @@ async def test_view_of_a_new_routine(hass, loaded):
     assert view["clock_options"] == [{"package": GOOGLE_CLOCK, "name": "Google Clock"}]
     assert view["steps"] == [] and view["items"] == []
     assert view["problems"] == ["no_clock"]
-    assert view["temperature_unit"] == "°C"
+    assert "temperature_unit" not in view
     assert (view["min_offset_minutes"], view["max_offset_minutes"]) == (-720, 60)
 
 
@@ -39,17 +40,17 @@ async def test_view_lists_steps_and_labeled_items_by_name(hass, loaded, add_item
             "offset_minutes": -30,
             "enabled": True,
             "available": True,
-            "type": "run",
             "action": "run",
             "brightness": None,
             "temperature": None,
             "heat_to": None,
             "cool_to": None,
+            "detail": "",
         }
     ]
     assert view["items"] == [
-        {"item": apple, "name": "Apple", "type": "run"},
-        {"item": zebra, "name": "Zebra", "type": "run"},
+        {"item": apple, "name": "Apple", "actions": [{"action": "run", "name": "Run", "settings": []}]},
+        {"item": zebra, "name": "Zebra", "actions": [{"action": "run", "name": "Run", "settings": []}]},
     ]
 
 
@@ -80,7 +81,7 @@ async def test_view_names_an_item_without_a_state_from_the_registry(hass, loaded
     er.async_get(hass).async_update_entity(labeled_script, name="Start the heater")
 
     assert build_view(hass, loaded)["items"] == [
-        {"item": labeled_script, "name": "Start the heater", "type": "run"}
+        {"item": labeled_script, "name": "Start the heater", "actions": RUN_ACTIONS}
     ]
 
 
@@ -132,19 +133,12 @@ async def test_view_offers_lights_and_thermostats_without_a_label(hass, loaded, 
     hass.states.async_set("switch.pump", "off", {"friendly_name": "Pump"})
 
     assert build_view(hass, loaded)["items"] == [
-        {"item": script, "name": "Good morning", "type": "run"},
-        {"item": hall, "name": "Hall", "type": "thermostat_range", "actions": ["set_temperature"], "min_temp": 45, "max_temp": 95},
-        {
-            "item": heater,
-            "name": "Heater",
-            "type": "thermostat",
-            "actions": ["turn_on", "turn_off"],
-            "temperature": True,
-            "min_temp": 86,
-            "max_temp": 125,
-        },
-        {"item": lamp, "name": "Lamp", "type": "light", "actions": ["turn_on", "turn_off"], "brightness": True},
+        {"item": script, "name": "Good morning", "actions": RUN_ACTIONS},
+        {"item": hall, "name": "Hall", "actions": describe_device(hass, hall)},
+        {"item": heater, "name": "Heater", "actions": describe_device(hass, heater)},
+        {"item": lamp, "name": "Lamp", "actions": describe_device(hass, lamp)},
     ]
+    assert [action["action"] for action in describe_device(hass, lamp)] == ["turn_on", "turn_off"]
 
 
 async def test_view_leaves_out_hidden_and_unavailable_devices(hass, loaded, lamp):
@@ -173,18 +167,19 @@ async def test_view_shows_a_device_step_with_its_action_and_settings(hass, loade
         "offset_minutes": -10,
         "enabled": True,
         "available": True,
-        "type": "light",
         "action": "turn_on",
         "brightness": 40,
         "temperature": None,
         "heat_to": None,
         "cool_to": None,
+        "detail": "Turn on at 40%",
     }
-    assert (second["type"], second["action"], second["heat_to"], second["cool_to"]) == (
-        "thermostat_range",
+    assert "type" not in first
+    assert (second["action"], second["heat_to"], second["cool_to"], second["detail"]) == (
         "set_temperature",
         68,
         74,
+        "Heat to 68°C, cool to 74°C",
     )
 
 
@@ -194,7 +189,7 @@ async def test_view_marks_a_device_step_whose_device_is_gone(hass, loaded, lamp)
 
     step = build_view(hass, loaded)["steps"][0]
 
-    assert (step["available"], step["type"], step["name"]) == (False, None, lamp)
+    assert (step["available"], step["detail"], step["name"]) == (False, "Turn on", lamp)
 
 
 async def test_view_keeps_an_unavailable_device_step_available(hass, loaded, lamp):
@@ -203,4 +198,4 @@ async def test_view_keeps_an_unavailable_device_step_available(hass, loaded, lam
 
     step = build_view(hass, loaded)["steps"][0]
 
-    assert (step["available"], step["type"]) == (True, None)
+    assert (step["available"], step["detail"]) == (True, "Turn on")

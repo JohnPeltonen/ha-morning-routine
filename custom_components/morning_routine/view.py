@@ -15,7 +15,7 @@ from custom_components.morning_routine.const import (
     MAX_OFFSET_MINUTES,
     MIN_OFFSET_MINUTES,
 )
-from custom_components.morning_routine.devices import device_info
+from custom_components.morning_routine.devices import RUN_ACTIONS, describe_device, step_detail
 from custom_components.morning_routine.routine import step_is_allowed
 from custom_components.morning_routine.rules import RECORD_KEPT
 
@@ -38,19 +38,19 @@ def build_view(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
                 "offset_minutes": step.offset_minutes,
                 "enabled": step.enabled,
                 "available": step_is_allowed(hass, step),
-                "type": _step_type(hass, step.item, step.action),
                 "action": step.action,
                 "brightness": step.brightness,
                 "temperature": step.temperature,
                 "heat_to": step.heat_to,
                 "cool_to": step.cool_to,
+                # What the step does, in words, so the card needs no device words of its own.
+                "detail": step_detail(hass, step),
             }
             for step in routine.steps
         ],
         "items": sorted(
             _labeled_items(hass) + _devices(hass), key=lambda item: (item["name"].casefold(), item["item"])
         ),
-        "temperature_unit": hass.config.units.temperature_unit,
         "problems": _problems(hass, entry),
         "min_offset_minutes": MIN_OFFSET_MINUTES,
         "max_offset_minutes": MAX_OFFSET_MINUTES,
@@ -67,36 +67,29 @@ def _name(hass: HomeAssistant, item: str) -> str:
     return registry_entry.name or registry_entry.original_name or item
 
 
-def _labeled_items(hass: HomeAssistant) -> list[dict[str, str]]:
+def _labeled_items(hass: HomeAssistant) -> list[dict[str, Any]]:
     label = lr.async_get(hass).async_get_label_by_name(LABEL_NAME)
     if label is None:
         return []
     return [
-        {"item": registry_entry.entity_id, "name": _name(hass, registry_entry.entity_id), "type": "run"}
+        {"item": registry_entry.entity_id, "name": _name(hass, registry_entry.entity_id), "actions": RUN_ACTIONS}
         for registry_entry in er.async_entries_for_label(er.async_get(hass), label.label_id)
         if registry_entry.domain in ALLOWED_DOMAINS
     ]
 
 
 def _devices(hass: HomeAssistant) -> list[dict[str, Any]]:
-    """Every light and thermostat a step can change. No label is needed for these."""
+    """Every light and thermostat a step can change, with what a step can do to it. These need no label."""
     registry = er.async_get(hass)
     devices = []
     for state in hass.states.async_all(DEVICE_DOMAINS):
         registry_entry = registry.async_get(state.entity_id)
         if registry_entry is not None and registry_entry.hidden_by is not None:
             continue
-        info = device_info(hass, state.entity_id)
-        if info is not None:
-            devices.append({"item": state.entity_id, "name": state.name, **info})
+        actions = describe_device(hass, state.entity_id)
+        if actions is not None:
+            devices.append({"item": state.entity_id, "name": state.name, "actions": actions})
     return devices
-
-
-def _step_type(hass: HomeAssistant, item: str, action: str) -> str | None:
-    if action == "run":
-        return "run"
-    info = device_info(hass, item)
-    return None if info is None else info["type"]
 
 
 def _problems(hass: HomeAssistant, entry: ConfigEntry) -> list[str]:
