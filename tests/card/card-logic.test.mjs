@@ -2,25 +2,27 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  actionChoices,
-  chosenItem,
+  actionOf,
+  canShow,
+  formEntry,
   formItems,
-  itemGroups,
+  formStep,
   joinOffset,
   offsetError,
   offsetLabel,
   problemText,
-  searchItems,
-  settingFields,
-  settingsError,
-  settingsOf,
+  refreshed,
   sortSteps,
   splitOffset,
-  stepDetail,
+  startForm,
   timelineRows,
+  withAction,
+  withChecked,
+  withItem,
   withRemoved,
   withSaved,
   withToggled,
+  withValue,
 } from "../../custom_components/morning_routine/www/morning-routine-card.js";
 
 // A step as the server's view sends it. A script's id is its item.
@@ -31,12 +33,12 @@ const step = (item, offset_minutes, extra = {}) => ({
   offset_minutes,
   enabled: true,
   available: true,
-  type: "run",
   action: "run",
   brightness: null,
   temperature: null,
   heat_to: null,
   cool_to: null,
+  detail: "",
   ...extra,
 });
 
@@ -49,27 +51,69 @@ const wire = (item, offset_minutes, enabled = true, extra = {}) => ({
   ...extra,
 });
 
-const LAMP = { item: "light.lamp", name: "Lamp", type: "light", actions: ["turn_on", "turn_off"], brightness: true };
-const PLAIN = { item: "light.plain", name: "Plain", type: "light", actions: ["turn_on", "turn_off"], brightness: false };
+// Items as the server's view sends them: what a step can do, with each setting as a selector.
+const slider = (min, max, unit, stepSize = 1) => ({
+  number: { min, max, step: stepSize, mode: "slider", unit_of_measurement: unit },
+});
+const BRIGHTNESS = {
+  key: "brightness",
+  name: "Brightness",
+  optional: true,
+  hint: "as it was",
+  start: 100,
+  selector: slider(1, 100, "%"),
+};
+const TURN_OFF = { action: "turn_off", name: "Turn off", settings: [] };
+const script = (item, name) => ({ item, name, actions: [{ action: "run", name: "Run", settings: [] }] });
+const LAMP = {
+  item: "light.lamp",
+  name: "Lamp",
+  actions: [{ action: "turn_on", name: "Turn on", settings: [BRIGHTNESS] }, TURN_OFF],
+};
+const PLAIN = {
+  item: "light.plain",
+  name: "Plain",
+  actions: [{ action: "turn_on", name: "Turn on", settings: [] }, TURN_OFF],
+};
 const HEATER = {
   item: "climate.heater",
   name: "Heater",
-  type: "thermostat",
-  actions: ["turn_on", "turn_off"],
-  temperature: true,
-  min_temp: 86,
-  max_temp: 125,
+  actions: [
+    {
+      action: "turn_on",
+      name: "Turn on",
+      settings: [
+        {
+          key: "temperature",
+          name: "Temperature",
+          optional: true,
+          hint: "last setting",
+          start: 106,
+          selector: slider(86, 125, "°F"),
+        },
+      ],
+    },
+    TURN_OFF,
+  ],
 };
 const HALL = {
   item: "climate.hall",
   name: "Hall",
-  type: "thermostat_range",
-  actions: ["set_temperature"],
-  min_temp: 45,
-  max_temp: 95,
+  actions: [
+    {
+      action: "set_temperature",
+      name: "Set temperatures",
+      settings: [
+        { key: "heat_to", name: "Heat to", optional: false, start: 62, selector: slider(45, 95, "°F") },
+        { key: "cool_to", name: "Cool to", optional: false, start: 78, selector: slider(45, 95, "°F") },
+      ],
+    },
+  ],
 };
 const lampStep = (id, offset_minutes, extra = {}) =>
-  step("light.lamp", offset_minutes, { id, name: "Lamp", type: "light", action: "turn_on", ...extra });
+  step("light.lamp", offset_minutes, { id, name: "Lamp", action: "turn_on", detail: "Turn on", ...extra });
+const hallStep = (id, heat_to, cool_to) =>
+  step("climate.hall", -20, { id, name: "Hall", action: "set_temperature", heat_to, cool_to });
 
 const viewOf = (steps, items = []) => ({
   steps,
@@ -157,11 +201,7 @@ test("offsetError takes its limits from the view", () => {
 });
 
 test("formItems leaves out scripts other steps use", () => {
-  const items = [
-    { item: "script.a", name: "A", type: "run" },
-    { item: "script.b", name: "B", type: "run" },
-    { item: "script.c", name: "C", type: "run" },
-  ];
+  const items = [script("script.a", "A"), script("script.b", "B"), script("script.c", "C")];
   const view = viewOf([step("script.a", -30), step("script.b", 0)], items);
   assert.deepEqual(formItems(view, null), [items[2]]);
   assert.deepEqual(formItems(view, "script.a"), [items[0], items[2]]);
@@ -173,20 +213,9 @@ test("formItems always offers a light or thermostat, even one that is already a 
   assert.deepEqual(formItems(view, "a"), [LAMP, HEATER]);
 });
 
-test("formItems keeps the edited step's own item when it is no longer available", () => {
-  const view = viewOf(
-    [step("script.gone", -30, { name: "Gone", available: false })],
-    [{ item: "script.c", name: "C", type: "run" }],
-  );
-  assert.deepEqual(formItems(view, "script.gone"), [
-    { item: "script.gone", name: "Gone", type: "run" },
-    { item: "script.c", name: "C", type: "run" },
-  ]);
-});
-
-test("formItems keeps a device step's own item with no type when the device is gone", () => {
-  const view = viewOf([lampStep("a", -30, { type: null, available: false })], [HEATER]);
-  assert.deepEqual(formItems(view, "a"), [{ item: "light.lamp", name: "Lamp", type: null }, HEATER]);
+test("formItems offers only what the server lists, so an edited step's own item that is gone is not in it", () => {
+  const view = viewOf([step("script.gone", -30, { name: "Gone", available: false })], [script("script.c", "C")]);
+  assert.deepEqual(formItems(view, "script.gone"), [script("script.c", "C")]);
 });
 
 test("withToggled changes one step and sends only what the server takes", () => {
@@ -248,128 +277,6 @@ test("withRemoved removes only the step with that id", () => {
   );
 });
 
-test("stepDetail says what a light or thermostat step does", () => {
-  assert.equal(stepDetail(step("script.a", 0), "°F"), "");
-  assert.equal(stepDetail(lampStep("a", 0), "°F"), "Turn on");
-  assert.equal(stepDetail(lampStep("a", 0, { brightness: 40 }), "°F"), "Turn on at 40%");
-  assert.equal(stepDetail(lampStep("a", 0, { action: "turn_off" }), "°F"), "Turn off");
-  assert.equal(stepDetail({ action: "turn_on", temperature: 115 }, "°F"), "Turn on at 115°F");
-  assert.equal(
-    stepDetail({ action: "set_temperature", heat_to: 68, cool_to: 74.5 }, "°F"),
-    "Heat to 68°F, cool to 74.5°F",
-  );
-  assert.equal(stepDetail({ action: "turn_on", temperature: 20 }, undefined), "Turn on at 20°");
-});
-
-test("searchItems keeps names that have every typed word, and always the chosen item", () => {
-  const items = [LAMP, PLAIN, HEATER, { item: "light.kitchen_lamp", name: "Kitchen Lamp", type: "light" }];
-  assert.deepEqual(searchItems(items, "", "").length, 4);
-  assert.deepEqual(
-    searchItems(items, "lamp", "").map((entry) => entry.name),
-    ["Lamp", "Kitchen Lamp"],
-  );
-  assert.deepEqual(
-    searchItems(items, "  LAMP kit ", "").map((entry) => entry.name),
-    ["Kitchen Lamp"],
-  );
-  assert.deepEqual(
-    searchItems(items, "kitchen", "climate.heater").map((entry) => entry.name),
-    ["Heater", "Kitchen Lamp"],
-  );
-  assert.deepEqual(searchItems(items, "zzz", ""), []);
-});
-
-test("itemGroups puts lights, then thermostats, then scripts, and leaves out empty groups", () => {
-  const script = { item: "script.a", name: "A", type: "run" };
-  const gone = { item: "light.gone", name: "Gone", type: null };
-  assert.deepEqual(itemGroups([script, HALL, LAMP, HEATER, gone]), [
-    { title: "", items: [gone] },
-    { title: "Lights", items: [LAMP] },
-    { title: "Thermostats", items: [HALL, HEATER] },
-    { title: "Scripts, scenes and automations", items: [script] },
-  ]);
-  assert.deepEqual(itemGroups([script]), [{ title: "Scripts, scenes and automations", items: [script] }]);
-  assert.deepEqual(itemGroups([]), []);
-});
-
-test("actionChoices names what a device can do", () => {
-  assert.deepEqual(actionChoices(LAMP), [
-    { action: "turn_on", text: "Turn on" },
-    { action: "turn_off", text: "Turn off" },
-  ]);
-  assert.deepEqual(actionChoices(HALL), [{ action: "set_temperature", text: "Set temperatures" }]);
-  assert.deepEqual(actionChoices({ item: "script.a", name: "A", type: "run" }), []);
-  assert.deepEqual(actionChoices(null), []);
-});
-
-test("settingFields shows only the boxes the item and action take", () => {
-  assert.deepEqual(settingFields(LAMP, "turn_on"), ["brightness"]);
-  assert.deepEqual(settingFields(LAMP, "turn_off"), []);
-  assert.deepEqual(settingFields(PLAIN, "turn_on"), []);
-  assert.deepEqual(settingFields(HEATER, "turn_on"), ["temperature"]);
-  assert.deepEqual(settingFields(HEATER, "turn_off"), []);
-  assert.deepEqual(settingFields({ ...HEATER, temperature: false }, "turn_on"), []);
-  assert.deepEqual(settingFields(HALL, "set_temperature"), ["heat_to", "cool_to"]);
-  assert.deepEqual(settingFields(null, "turn_on"), []);
-});
-
-test("settingsError allows an empty brightness and refuses one outside 1 to 100", () => {
-  const sentence = "Enter a brightness from 1 to 100, or leave it empty.";
-  for (const text of ["", " ", "1", "100", " 40 "]) {
-    assert.equal(settingsError(LAMP, "turn_on", { brightness: text }), null, `for "${text}"`);
-  }
-  for (const text of ["0", "101", "40.5", "-5", "abc", "4e1"]) {
-    assert.equal(settingsError(LAMP, "turn_on", { brightness: text }), sentence, `for "${text}"`);
-  }
-});
-
-test("settingsError checks an optional temperature against the device's range", () => {
-  const sentence = "Enter a temperature from 86 to 125, or leave it empty.";
-  for (const text of ["", "86", "125", "99.5"]) {
-    assert.equal(settingsError(HEATER, "turn_on", { temperature: text }), null, `for "${text}"`);
-  }
-  for (const text of ["85", "126", "hot", "1e2"]) {
-    assert.equal(settingsError(HEATER, "turn_on", { temperature: text }), sentence, `for "${text}"`);
-  }
-  assert.equal(settingsError(HEATER, "turn_off", { temperature: "hot" }), null);
-});
-
-test("settingsError leaves the range out of the sentence when the device reports none", () => {
-  const noRange = { ...HEATER, min_temp: null, max_temp: null };
-  assert.equal(settingsError(noRange, "turn_on", { temperature: "500" }), null);
-  assert.equal(
-    settingsError(noRange, "turn_on", { temperature: "hot" }),
-    "Enter a temperature, or leave it empty.",
-  );
-});
-
-test("settingsError needs both temperatures of a range, with heat below cool", () => {
-  const both = "Enter a temperature from 45 to 95 in both boxes.";
-  assert.equal(settingsError(HALL, "set_temperature", { heat_to: "68", cool_to: "74" }), null);
-  assert.equal(settingsError(HALL, "set_temperature", { heat_to: "", cool_to: "74" }), both);
-  assert.equal(settingsError(HALL, "set_temperature", { heat_to: "68", cool_to: "" }), both);
-  assert.equal(settingsError(HALL, "set_temperature", { heat_to: "44", cool_to: "74" }), both);
-  assert.equal(settingsError(HALL, "set_temperature", { heat_to: "68", cool_to: "96" }), both);
-  assert.equal(
-    settingsError(HALL, "set_temperature", { heat_to: "74", cool_to: "68" }),
-    '"Heat to" must be lower than "Cool to".',
-  );
-  assert.equal(
-    settingsError(HALL, "set_temperature", { heat_to: "70", cool_to: "70" }),
-    '"Heat to" must be lower than "Cool to".',
-  );
-});
-
-test("settingsOf turns what was typed into numbers and leaves empty boxes out", () => {
-  assert.deepEqual(settingsOf(LAMP, "turn_on", { brightness: " 40 " }), { brightness: 40 });
-  assert.deepEqual(settingsOf(LAMP, "turn_on", { brightness: "" }), {});
-  assert.deepEqual(settingsOf(LAMP, "turn_off", { brightness: "40" }), {});
-  assert.deepEqual(settingsOf(HALL, "set_temperature", { heat_to: "68", cool_to: "74.5" }), {
-    heat_to: 68,
-    cool_to: 74.5,
-  });
-});
-
 test("problemText has a sentence for every code the server sends", () => {
   assert.equal(
     problemText("sensor_missing"),
@@ -382,21 +289,6 @@ test("problemText has a sentence for every code the server sends", () => {
   assert.equal(problemText("no_clock"), "Choose a clock below. Nothing runs until one is chosen.");
   assert.equal(problemText("no_label"), null);
   assert.equal(problemText("something_new"), null);
-});
-
-test("chosenItem starts a new form on the first item", () => {
-  const items = [{ item: "script.a" }, { item: "script.b" }];
-  assert.equal(chosenItem(items, null), "script.a");
-  assert.equal(chosenItem([], null), "");
-});
-
-test("chosenItem keeps a choice that is still offered", () => {
-  assert.equal(chosenItem([{ item: "script.a" }, { item: "script.b" }], "script.b"), "script.b");
-});
-
-test("chosenItem chooses nothing when the choice is gone, and never another item", () => {
-  assert.equal(chosenItem([{ item: "script.a" }], "script.b"), "");
-  assert.equal(chosenItem([{ item: "script.a" }], ""), "");
 });
 
 test("withSaved changes only the edited step when one light is two steps", () => {
@@ -415,4 +307,227 @@ test("withSaved drops the id when only the item changes", () => {
   assert.deepEqual(withSaved(view, "a", { item: "light.plain", offset_minutes: -30, action: "turn_on" }), [
     { item: "light.plain", offset_minutes: -30, action: "turn_on", enabled: true },
   ]);
+});
+
+// ----- The form's state -----
+
+const NEW_FORM = { editing: null, item: "", action: null, values: {}, checked: {}, locked: false };
+
+test("actionOf finds an action's description, or null", () => {
+  assert.equal(actionOf(LAMP, "turn_off"), TURN_OFF);
+  assert.equal(actionOf(LAMP, "set_temperature"), null);
+  assert.equal(actionOf(null, "turn_on"), null);
+});
+
+test("a new step's form opens with nothing chosen and nothing to send", () => {
+  const view = viewOf([], [LAMP]);
+  const state = startForm(view, null);
+  assert.deepEqual(state, NEW_FORM);
+  assert.equal(formEntry(view, state), null);
+  assert.equal(formStep(state, null), null);
+});
+
+test("editing a light step with a brightness opens with it ticked at the saved value", () => {
+  const view = viewOf([lampStep("a", -30, { brightness: 40 })], [LAMP]);
+  assert.deepEqual(startForm(view, "a"), {
+    editing: "a",
+    item: "light.lamp",
+    action: "turn_on",
+    values: { brightness: 40 },
+    checked: { brightness: true },
+    locked: false,
+  });
+});
+
+test("editing a light step with no brightness opens with it unticked, holding the start value", () => {
+  const view = viewOf([lampStep("a", -30)], [LAMP]);
+  const state = startForm(view, "a");
+  assert.deepEqual(state.values, { brightness: 100 });
+  assert.deepEqual(state.checked, { brightness: false });
+});
+
+test("canShow is false for an action, a setting or a value the item doesn't offer", () => {
+  assert.equal(canShow(LAMP, lampStep("a", 0, { action: "set_temperature" })), false);
+  assert.equal(canShow(PLAIN, lampStep("a", 0, { brightness: 40 })), false);
+  assert.equal(canShow(HALL, hallStep("a", 68, null)), false);
+  assert.equal(canShow(HALL, hallStep("a", 40, 74)), false);
+  assert.equal(canShow(HEATER, step("climate.heater", 0, { action: "turn_on", temperature: 130 })), false);
+});
+
+test("canShow is true for a saved value between slider steps, and for an optional setting left out", () => {
+  assert.equal(canShow(HALL, hallStep("a", 68.3, 74)), true);
+  assert.equal(canShow(LAMP, lampStep("a", 0)), true);
+  assert.equal(canShow(LAMP, lampStep("a", 0, { brightness: 40 })), true);
+});
+
+test("a step whose item is gone opens locked and sends its saved fields back", () => {
+  const view = viewOf([lampStep("a", -30, { brightness: 40, available: false })], [HEATER]);
+  const state = startForm(view, "a");
+  assert.equal(state.locked, true);
+  assert.equal(formEntry(view, state), null);
+  assert.deepEqual(formStep(state, null), { item: "light.lamp", action: "turn_on", brightness: 40 });
+});
+
+test("a step the item can no longer show opens locked and sends its saved fields back", () => {
+  const view = viewOf([lampStep("a", -30, { brightness: 40 })], [{ ...PLAIN, item: "light.lamp" }]);
+  const state = startForm(view, "a");
+  assert.equal(state.locked, true);
+  assert.deepEqual(formStep(state, formEntry(view, state)), { item: "light.lamp", action: "turn_on", brightness: 40 });
+});
+
+// Review Focus 3: opening a saved step and saving it sends back exactly what was saved.
+test("a saved step opened and saved untouched sends the same settings", () => {
+  const cases = [
+    [hallStep("a", 68.3, 74), { item: "climate.hall", action: "set_temperature", heat_to: 68.3, cool_to: 74 }],
+    [lampStep("a", -30), { item: "light.lamp", action: "turn_on" }],
+    [lampStep("a", -30, { brightness: 40 }), { item: "light.lamp", action: "turn_on", brightness: 40 }],
+    [lampStep("a", -30, { action: "turn_off" }), { item: "light.lamp", action: "turn_off" }],
+    [step("script.a", -30), { item: "script.a", action: "run" }],
+  ];
+  for (const [saved, sent] of cases) {
+    const view = viewOf([saved], [LAMP, HALL, script("script.a", "A")]);
+    const state = startForm(view, saved.id);
+    assert.equal(state.locked, false);
+    assert.deepEqual(formStep(state, formEntry(view, state)), sent);
+  }
+});
+
+test("choosing a range thermostat can be saved without moving a slider", () => {
+  const state = withItem(NEW_FORM, HALL);
+  assert.deepEqual(formStep(state, HALL), {
+    item: "climate.hall",
+    action: "set_temperature",
+    heat_to: 62,
+    cool_to: 78,
+  });
+});
+
+test("choosing an item takes its first action, with nothing ticked", () => {
+  const state = withItem(NEW_FORM, LAMP);
+  assert.equal(state.action, "turn_on");
+  assert.deepEqual(state.checked, { brightness: false });
+  assert.deepEqual(formStep(state, LAMP), { item: "light.lamp", action: "turn_on" });
+});
+
+test("choosing nothing clears the choice", () => {
+  const state = withItem(withItem(NEW_FORM, LAMP), null);
+  assert.deepEqual(state, NEW_FORM);
+});
+
+test("ticking Brightness and moving the slider sends it, and unticking sends none", () => {
+  let state = withItem(NEW_FORM, LAMP);
+  state = withChecked(state, BRIGHTNESS, true);
+  state = withValue(state, "brightness", 40);
+  assert.deepEqual(formStep(state, LAMP), { item: "light.lamp", action: "turn_on", brightness: 40 });
+  state = withChecked(state, BRIGHTNESS, false);
+  assert.deepEqual(formStep(state, LAMP), { item: "light.lamp", action: "turn_on" });
+});
+
+test("switching to Turn off and back keeps the brightness and its tick", () => {
+  let state = withValue(withChecked(withItem(NEW_FORM, LAMP), BRIGHTNESS, true), "brightness", 40);
+  state = withAction(state, LAMP, "turn_off");
+  assert.deepEqual(formStep(state, LAMP), { item: "light.lamp", action: "turn_off" });
+  state = withAction(state, LAMP, "turn_on");
+  assert.deepEqual(formStep(state, LAMP), { item: "light.lamp", action: "turn_on", brightness: 40 });
+});
+
+test("an emptied number box holds no number, and nothing can be sent until it has one", () => {
+  let state = withChecked(withItem(NEW_FORM, LAMP), BRIGHTNESS, true);
+  state = withValue(state, "brightness", undefined);
+  assert.equal(state.values.brightness, null);
+  assert.equal(formStep(state, LAMP), null);
+  // Unticked, the empty box isn't drawn, so the step can be saved without a brightness.
+  state = withChecked(state, BRIGHTNESS, false);
+  assert.deepEqual(formStep(state, LAMP), { item: "light.lamp", action: "turn_on" });
+  // Ticked again, the slider starts over at its start value.
+  state = withChecked(state, BRIGHTNESS, true);
+  assert.deepEqual(formStep(state, LAMP), { item: "light.lamp", action: "turn_on", brightness: 100 });
+});
+
+test("a value is sent as held, never rounded to the slider's step", () => {
+  const state = withValue(withItem(NEW_FORM, HALL), "heat_to", 70.5);
+  assert.equal(formStep(state, HALL).heat_to, 70.5);
+});
+
+// Review Focus 2: a new view arrives while the form is open.
+test("refreshed with nothing different changes nothing and says nothing", () => {
+  const view = viewOf([], [LAMP]);
+  const state = withValue(withChecked(withItem(NEW_FORM, LAMP), BRIGHTNESS, true), "brightness", 40);
+  assert.deepEqual(refreshed(state, view, viewOf([], [LAMP])), { state, note: null });
+});
+
+test("refreshed when the light stops dimming drops the brightness and says the item changed", () => {
+  const state = withValue(withChecked(withItem(NEW_FORM, LAMP), BRIGHTNESS, true), "brightness", 40);
+  const after = viewOf([], [{ ...PLAIN, item: "light.lamp" }]);
+  const result = refreshed(state, viewOf([], [LAMP]), after);
+  assert.equal(result.note, "item_changed");
+  assert.deepEqual(formStep(result.state, formEntry(after, result.state)), { item: "light.lamp", action: "turn_on" });
+});
+
+test("refreshed when the chosen item is gone clears the choice and says so", () => {
+  const state = withItem(NEW_FORM, LAMP);
+  const result = refreshed(state, viewOf([], [LAMP]), viewOf([], [HEATER]));
+  assert.equal(result.note, "choice_gone");
+  assert.equal(result.state.item, "");
+  assert.equal(formStep(result.state, null), null);
+});
+
+test("refreshed when another step takes the chosen script clears the choice", () => {
+  const items = [script("script.a", "A")];
+  const state = withItem(NEW_FORM, items[0]);
+  const result = refreshed(state, viewOf([], items), viewOf([step("script.a", 0)], items));
+  assert.equal(result.note, "choice_gone");
+  assert.equal(result.state.item, "");
+});
+
+test("refreshed when the chosen action is no longer offered takes the first action and says the item changed", () => {
+  const state = withAction(withItem(NEW_FORM, LAMP), LAMP, "turn_off");
+  const after = viewOf([], [{ ...LAMP, actions: [LAMP.actions[0]] }]);
+  const result = refreshed(state, viewOf([], [LAMP]), after);
+  assert.equal(result.note, "item_changed");
+  assert.equal(result.state.action, "turn_on");
+});
+
+test("refreshed when the limits narrow moves a drawn value to the limit and says the item changed", () => {
+  const state = withItem(NEW_FORM, HALL);
+  const narrow = { ...HALL.actions[0].settings[1], selector: slider(45, 75, "°F") };
+  const after = viewOf([], [{ ...HALL, actions: [{ ...HALL.actions[0], settings: [HALL.actions[0].settings[0], narrow] }] }]);
+  const result = refreshed(state, viewOf([], [HALL]), after);
+  assert.equal(result.note, "item_changed");
+  assert.equal(result.state.values.cool_to, 75);
+});
+
+test("refreshed moves a value that isn't drawn into new limits without a word", () => {
+  const state = withValue(withItem(NEW_FORM, HEATER), "temperature", 120);
+  const narrow = { ...HEATER.actions[0].settings[0], selector: slider(86, 110, "°F") };
+  const after = viewOf([], [{ ...HEATER, actions: [{ ...HEATER.actions[0], settings: [narrow] }, TURN_OFF] }]);
+  const result = refreshed(state, viewOf([], [HEATER]), after);
+  assert.equal(result.note, null);
+  assert.equal(result.state.values.temperature, 110);
+});
+
+test("refreshed says the item changed when a drawn slider's selector changes", () => {
+  const state = withItem(NEW_FORM, HALL);
+  const finer = HALL.actions[0].settings.map((setting) => ({ ...setting, selector: slider(45, 95, "°F", 0.5) }));
+  const after = viewOf([], [{ ...HALL, actions: [{ ...HALL.actions[0], settings: finer }] }]);
+  assert.equal(refreshed(state, viewOf([], [HALL]), after).note, "item_changed");
+});
+
+test("refreshed gives a setting that appears its start value and says the item changed", () => {
+  const before = viewOf([], [{ ...PLAIN, item: "light.lamp" }]);
+  const state = withItem(NEW_FORM, before.items[0]);
+  const result = refreshed(state, before, viewOf([], [LAMP]));
+  assert.equal(result.note, "item_changed");
+  assert.deepEqual(result.state.values, { brightness: 100 });
+  assert.deepEqual(result.state.checked, { brightness: false });
+});
+
+test("refreshed reads a locked step's saved settings again and stays locked", () => {
+  const before = viewOf([lampStep("a", -30, { brightness: 40, available: false })], []);
+  const state = startForm(before, "a");
+  const after = viewOf([lampStep("a", -30, { brightness: 60, available: false })], [LAMP]);
+  const result = refreshed(state, before, after);
+  assert.equal(result.note, null);
+  assert.equal(result.state.locked, true);
+  assert.deepEqual(formStep(result.state, null), { item: "light.lamp", action: "turn_on", brightness: 60 });
 });

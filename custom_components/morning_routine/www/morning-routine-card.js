@@ -10,14 +10,9 @@ const PROBLEM_TEXT = {
   no_clock: "Choose a clock below. Nothing runs until one is chosen.",
 };
 
-const GROUPS = [
-  { title: "Lights", types: ["light"] },
-  { title: "Thermostats", types: ["thermostat", "thermostat_range"] },
-  { title: "Scripts, scenes and automations", types: ["run"] },
-];
-const ACTION_TEXT = { turn_on: "Turn on", turn_off: "Turn off", set_temperature: "Set temperatures" };
 const SETTINGS = ["brightness", "temperature", "heat_to", "cool_to"];
 const isSet = (value) => value !== null && value !== undefined;
+const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
 
 export function offsetLabel(offsetMinutes) {
   if (offsetMinutes === 0) return "At alarm";
@@ -77,118 +72,166 @@ export function offsetError(text, direction, view) {
   return null;
 }
 
-// What a light or thermostat step does, in words. Empty for a script, scene or automation.
-export function stepDetail(step, unit) {
-  const degrees = (value) => `${value}${unit || "°"}`;
-  if (step.action === "turn_off") return "Turn off";
-  if (step.action === "turn_on") {
-    if (isSet(step.brightness)) return `Turn on at ${step.brightness}%`;
-    if (isSet(step.temperature)) return `Turn on at ${degrees(step.temperature)}`;
-    return "Turn on";
-  }
-  if (step.action === "set_temperature") {
-    return `Heat to ${degrees(step.heat_to)}, cool to ${degrees(step.cool_to)}`;
-  }
-  return "";
-}
+// A script, scene or automation runs. It can be a step once.
+const runsOnce = (entry) => entry.actions.some((action) => action.action === "run");
 
 // What the form's picker offers. A script, scene or automation can be a step once, so one that
 // another step uses is left out. A light or thermostat can be a step any number of times.
 export function formItems(view, editingId) {
-  const editing = view.steps.find((step) => step.id === editingId) || null;
   const usedByOthers = new Set(
     view.steps.filter((step) => step.action === "run" && step.id !== editingId).map((step) => step.item),
   );
-  const items = view.items.filter((entry) => !(entry.type === "run" && usedByOthers.has(entry.item)));
-  if (editing && !items.some((entry) => entry.item === editing.item)) {
-    items.unshift({ item: editing.item, name: editing.name, type: editing.type });
-  }
-  return items;
+  return view.items.filter((entry) => !(runsOnce(entry) && usedByOthers.has(entry.item)));
 }
 
-// Which item the form's picker shows. `selected` is null for a form that starts on its first item.
-// A choice that is no longer offered becomes no choice, never a different item.
-export function chosenItem(items, selected) {
-  if (selected === null) return items.length ? items[0].item : "";
-  return items.some((entry) => entry.item === selected) ? selected : "";
+// ----- The form's state -----
+// The form holds one plain object: { editing, item, action, values, checked, locked }.
+// `values` maps a setting's key to the number held for it. `checked` maps an optional setting's
+// key to whether it is ticked. `locked` means the item can't show what the step does, so only
+// the step's time can change. Every change to the form goes through one of the functions below,
+// and what is saved is worked out from the same state the form is drawn from.
+
+// The item the form is on, with what it can do. Null when nothing is chosen or it isn't offered.
+export function formEntry(view, state) {
+  return formItems(view, state.editing).find((entry) => entry.item === state.item) || null;
 }
 
-// The items whose name has every word that was typed. The chosen item always stays.
-export function searchItems(items, text, keepItem) {
-  const words = String(text).toLowerCase().split(/\s+/).filter(Boolean);
-  return items.filter((entry) => {
-    if (entry.item === keepItem) return true;
-    const name = entry.name.toLowerCase();
-    return words.every((word) => name.includes(word));
+export function actionOf(entry, action) {
+  return (entry && entry.actions.find((choice) => choice.action === action)) || null;
+}
+
+function inside(setting, value) {
+  const limits = setting.selector.number;
+  return value >= limits.min && value <= limits.max;
+}
+
+function savedSettings(step) {
+  return Object.fromEntries(SETTINGS.filter((key) => isSet(step[key])).map((key) => [key, step[key]]));
+}
+
+// Whether an item's description can draw a saved step as controls.
+export function canShow(entry, step) {
+  const action = actionOf(entry, step.action);
+  if (!action) return false;
+  const offered = new Set(action.settings.map((setting) => setting.key));
+  if (SETTINGS.some((key) => isSet(step[key]) && !offered.has(key))) return false;
+  return action.settings.every((setting) => {
+    const value = step[setting.key];
+    return isSet(value) ? inside(setting, value) : setting.optional;
   });
 }
 
-// The picker's groups, in a fixed order. An item of no known type comes first, with no title.
-export function itemGroups(items) {
-  const known = new Set(GROUPS.flatMap((group) => group.types));
-  const groups = [{ title: "", items: items.filter((entry) => !known.has(entry.type)) }];
-  for (const group of GROUPS) {
-    groups.push({ title: group.title, items: items.filter((entry) => group.types.includes(entry.type)) });
+export function startForm(view, editingId) {
+  if (editingId === null) return { editing: null, item: "", action: null, values: {}, checked: {}, locked: false };
+  const step = view.steps.find((entry) => entry.id === editingId);
+  const state = { editing: editingId, item: step.item, action: step.action, values: {}, checked: {}, locked: false };
+  const entry = formEntry(view, state);
+  if (!entry || !canShow(entry, step)) return { ...state, values: savedSettings(step), locked: true };
+  for (const setting of actionOf(entry, step.action).settings) {
+    const saved = step[setting.key];
+    state.values[setting.key] = isSet(saved) ? saved : setting.start;
+    if (setting.optional) state.checked[setting.key] = isSet(saved);
   }
-  return groups.filter((group) => group.items.length);
+  return state;
 }
 
-export function actionChoices(entry) {
-  return ((entry && entry.actions) || []).map((action) => ({ action, text: ACTION_TEXT[action] || action }));
+// The values and ticks for an action's settings. What is already held for a setting is kept.
+function settingsState(settings, held) {
+  const values = { ...held.values };
+  const checked = { ...held.checked };
+  for (const setting of settings) {
+    const value = values[setting.key];
+    if (!isNumber(value) || !inside(setting, value)) values[setting.key] = setting.start;
+    if (setting.optional) checked[setting.key] = checked[setting.key] === true;
+  }
+  return { values, checked };
 }
 
-// Which setting boxes the form shows for this item and action.
-export function settingFields(entry, action) {
-  if (!entry) return [];
-  if (action === "set_temperature") return ["heat_to", "cool_to"];
-  if (action === "turn_on" && entry.type === "light" && entry.brightness) return ["brightness"];
-  if (action === "turn_on" && entry.type === "thermostat" && entry.temperature) return ["temperature"];
-  return [];
+export function withItem(state, entry) {
+  if (!entry) return { ...state, item: "", action: null, values: {}, checked: {} };
+  const action = entry.actions[0];
+  return { ...state, item: entry.item, action: action.action, ...settingsState(action.settings, { values: {}, checked: {} }) };
 }
 
-function temperatureProblem(text, entry) {
-  if (!/^-?\d+(\.\d+)?$/.test(text)) return true;
-  const value = Number(text);
-  return (isSet(entry.min_temp) && value < entry.min_temp) || (isSet(entry.max_temp) && value > entry.max_temp);
+export function withAction(state, entry, action) {
+  const chosen = actionOf(entry, action);
+  return chosen ? { ...state, action, ...settingsState(chosen.settings, state) } : state;
 }
 
-function temperatureRange(entry) {
-  return isSet(entry.min_temp) && isSet(entry.max_temp) ? ` from ${entry.min_temp} to ${entry.max_temp}` : "";
+// Ticking a setting whose box was left empty starts it over at its start value.
+export function withChecked(state, setting, checked) {
+  const value = state.values[setting.key];
+  return {
+    ...state,
+    checked: { ...state.checked, [setting.key]: checked },
+    values: { ...state.values, [setting.key]: checked && !isNumber(value) ? setting.start : value },
+  };
 }
 
-// `fields` holds what was typed in each box, as text. Returns a sentence, or null when all is well.
-export function settingsError(entry, action, fields) {
-  const typed = (name) => String(fields[name] ?? "").trim();
-  for (const name of settingFields(entry, action)) {
-    const text = typed(name);
-    if (name === "brightness") {
-      if (text === "") continue;
-      if (!/^\d+$/.test(text) || Number(text) < 1 || Number(text) > 100) {
-        return "Enter a brightness from 1 to 100, or leave it empty.";
-      }
-    } else if (name === "temperature") {
-      if (text === "") continue;
-      if (temperatureProblem(text, entry)) {
-        return `Enter a temperature${temperatureRange(entry)}, or leave it empty.`;
-      }
-    } else if (temperatureProblem(text, entry)) {
-      return `Enter a temperature${temperatureRange(entry)} in both boxes.`;
+// An emptied number box reports no value. It is held as null, and nothing is saved until it has a number.
+export function withValue(state, key, value) {
+  return { ...state, values: { ...state.values, [key]: isNumber(value) ? value : null } };
+}
+
+// The step to send: only the settings that are drawn, each exactly as held. Null when there is
+// nothing to send yet.
+export function formStep(state, entry) {
+  if (state.locked) return { item: state.item, action: state.action, ...state.values };
+  const action = actionOf(entry, state.action);
+  if (!action || entry.item !== state.item) return null;
+  const step = { item: state.item, action: state.action };
+  for (const setting of action.settings) {
+    if (setting.optional && !state.checked[setting.key]) continue;
+    const value = state.values[setting.key];
+    if (!isNumber(value)) return null;
+    step[setting.key] = value;
+  }
+  return step;
+}
+
+// A new view arrived while the form is open. Returns the state to draw and a note for the
+// person: "choice_gone", "item_changed", or null when nothing they can see changed.
+export function refreshed(state, before, view) {
+  if (state.locked) {
+    const step = view.steps.find((entry) => entry.id === state.editing);
+    return { state: step ? { ...state, action: step.action, values: savedSettings(step) } : state, note: null };
+  }
+  if (!state.item) return { state, note: null };
+  const entry = formEntry(view, state);
+  if (!entry) return { state: withItem(state, null), note: "choice_gone" };
+  const action = actionOf(entry, state.action);
+  if (!action) return { state: withItem(state, entry), note: "item_changed" };
+
+  const old = actionOf(formEntry(before, state), state.action);
+  const oldSettings = old ? old.settings : [];
+  const drawn = (setting) => !setting.optional || state.checked[setting.key] === true;
+  const shape = (settings) => settings.map((setting) => `${setting.key}:${setting.optional}`).join();
+  let changed = shape(oldSettings) !== shape(action.settings);
+  const values = { ...state.values };
+  const checked = { ...state.checked };
+  for (const setting of oldSettings) {
+    if (!action.settings.some((kept) => kept.key === setting.key)) {
+      delete values[setting.key];
+      delete checked[setting.key];
     }
   }
-  if (action === "set_temperature" && Number(typed("heat_to")) >= Number(typed("cool_to"))) {
-    return '"Heat to" must be lower than "Cool to".';
+  for (const setting of action.settings) {
+    const was = oldSettings.find((kept) => kept.key === setting.key);
+    const value = values[setting.key];
+    if (!was) {
+      values[setting.key] = setting.start;
+      if (setting.optional) checked[setting.key] = false;
+      continue;
+    }
+    if (isNumber(value) && !inside(setting, value)) {
+      const limits = setting.selector.number;
+      values[setting.key] = Math.min(Math.max(value, limits.min), limits.max);
+      if (drawn(setting)) changed = true;
+    }
+    if (drawn(setting) && JSON.stringify(was.selector) !== JSON.stringify(setting.selector)) changed = true;
   }
-  return null;
-}
-
-// The settings as numbers, for a form that settingsError has passed.
-export function settingsOf(entry, action, fields) {
-  const settings = {};
-  for (const name of settingFields(entry, action)) {
-    const text = String(fields[name] ?? "").trim();
-    if (text !== "") settings[name] = Number(text);
-  }
-  return settings;
+  if (!changed && JSON.stringify(values) === JSON.stringify(state.values)) return { state, note: null };
+  return { state: { ...state, values, checked }, note: changed ? "item_changed" : null };
 }
 
 function wireStep(step) {
@@ -617,7 +660,7 @@ if (globalThis.customElements) {
 
     _stepRow(view, step, edge) {
       const state = !step.available ? " gone" : step.enabled ? "" : " off";
-      const detail = stepDetail(step, view.temperature_unit);
+      const detail = step.detail;
       return h(
         "div",
         { class: `step${edge}${state}` },
