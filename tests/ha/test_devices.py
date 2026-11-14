@@ -170,6 +170,31 @@ async def test_a_range_thermostat_without_two_usable_numbers_starts_a_third_and_
     assert setting(actions, "set_temperature", "cool_to")["start"] == 78
 
 
+def set_range(hass, low, high, step) -> list:
+    hass.states.async_set(
+        HALL, "heat", {"supported_features": RANGE, "min_temp": low, "max_temp": high, "target_temp_step": step}
+    )
+    actions = describe_device(hass, HALL)
+    return [setting(actions, "set_temperature", key)["start"] for key in ("heat_to", "cool_to")]
+
+
+async def test_a_start_value_on_a_fine_step_has_no_rounding_noise(hass, fahrenheit):
+    assert set_range(hass, 45, 95, 0.1) == [61.7, 78.3]
+
+
+async def test_a_range_two_steps_wide_still_starts_with_heat_below_cool(hass, fahrenheit):
+    assert set_range(hass, 70, 72, 1) == [70, 72]
+
+
+async def test_a_step_larger_than_the_range_keeps_the_start_values_inside_the_limits(hass, fahrenheit):
+    assert set_range(hass, 60, 68, 10) == [60, 68]
+
+    hass.states.async_set(
+        HEATER, "off", {"supported_features": ONE_TEMPERATURE, "min_temp": 60, "max_temp": 68, "target_temp_step": 10}
+    )
+    assert 60 <= setting(describe_device(hass, HEATER), "turn_on", "temperature")["start"] <= 68
+
+
 async def test_a_thermostat_with_no_limits_gets_home_assistants_defaults(hass, fahrenheit):
     hass.states.async_set(HEATER, "off", {"supported_features": ONE_TEMPERATURE})
 

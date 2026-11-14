@@ -59,7 +59,11 @@ def describe_device(hass: HomeAssistant, entity_id: str) -> list[dict[str, Any]]
         if not (_is_number(heat) and _is_number(cool) and low <= heat < cool <= high):
             # A third and two thirds of the way up, so a new step can be saved without moving either.
             third = (high - low) / 3
-            heat, cool = _on_a_step(low + third, low, step), _on_a_step(low + 2 * third, low, step)
+            heat = _on_a_step(low + third, low, high, step)
+            cool = _on_a_step(low + 2 * third, low, high, step)
+            if not heat < cool:
+                # A range only a step or two wide.
+                heat, cool = low, high
         return [
             _action(
                 "set_temperature",
@@ -75,7 +79,7 @@ def describe_device(hass: HomeAssistant, entity_id: str) -> list[dict[str, Any]]
     if features & TARGET_TEMPERATURE:
         current = attributes.get("temperature")
         if not (_is_number(current) and low <= current <= high):
-            current = _on_a_step((low + high) / 2, low, step)
+            current = _on_a_step((low + high) / 2, low, high, step)
         settings = [_setting("temperature", True, current, selector)]
     return [_action(action, settings if action == "turn_on" else []) for action in actions]
 
@@ -100,9 +104,11 @@ def _is_number(value: Any) -> bool:
     return type(value) in (int, float) and math.isfinite(value)
 
 
-def _on_a_step(value: float, low: float, step: float) -> float:
-    """The slider position nearest to a value."""
-    snapped = low + round((value - low) / step) * step
+def _on_a_step(value: float, low: float, high: float, step: float) -> float:
+    """The slider position nearest to a value, inside the limits."""
+    # Rounded, so a step such as 0.1 doesn't leave 78.30000000000001.
+    snapped = round(low + round((value - low) / step) * step, 6)
+    snapped = min(max(snapped, low), high)
     return int(snapped) if snapped == int(snapped) else snapped
 
 

@@ -62,7 +62,7 @@ wsl -d Ubuntu -- bash /mnt/d/code/ha-morning-routine/tests/try/start.sh
 wsl -d Ubuntu -- bash -c 'cd /mnt/d/code/ha-morning-routine && /root/mr/.venv/bin/python tests/try/set_up.py'
 ```
 
-Then open `http://localhost:8123/try-card`. The accounts are `tester` (admin) and `member` (not an admin), and the password is in `tests/try/set_up.py`. Restart it after changing any Python file. To start over, stop it and delete `/root/mr-try`.
+Then open `http://localhost:8123/try-card`. The accounts are `tester` (admin) and `member` (not an admin), and the password is in `tests/try/set_up.py`. Restart it after changing any Python file. Stop it when you're done: `wsl -d Ubuntu -- pkill -x hass`. To start over, stop it and delete `/root/mr-try`.
 
 ## Conventions
 

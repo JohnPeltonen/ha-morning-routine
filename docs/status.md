@@ -36,8 +36,8 @@ No loading recipe was needed on 2026.10.0. The controls were already defined for
 
 Phase 4 is built and committed on the owner's desktop. It is not pushed and not on any server. The integration version is 0.4.0.
 
-- Tasks 1 to 7 of the plan are done. One session built them on 2026-11-13.
-- Tests: 149 rules and translation tests, 243 Home Assistant tests (run in WSL), and 85 card tests (51 for the logic, 6 for the connection, 28 for the card's face and form).
+- All 8 tasks of the plan are done. One session built them on 2026-11-13, and one fresh reviewer then read the whole change.
+- Tests: 149 rules and translation tests, 246 Home Assistant tests (run in WSL), and 91 card tests (53 for the logic, 6 for the connection, 32 for the card's face and form).
 - The new card was used in a browser in the throwaway Home Assistant 2026.10.0, 360 pixels wide, as the admin account in the light theme and as the normal account in the dark theme. Done there: the routine, skip and step switches, the clock dropdown, adding a light with a brightness, adding the same light turning off, adding a one-temperature thermostat with a temperature, adding a range thermostat without moving a slider, both refusals shown as sentences, editing, retiming, and removing. Pressing Enter in a number box did not save. Nothing was logged to the browser console by the card.
 - Not checked: the owner's server, which runs a newer Home Assistant. A real phone. A screen reader. The loading recipe, because nothing was missing. A house with hundreds of devices.
 
@@ -72,6 +72,36 @@ Each has a test that failed first.
 - **The card could register too early** and show "Configuration error" until a reload (see above). It now registers again once Home Assistant's own root element is defined.
 - **A tap on a switch could leave the card stuck.** After a tap the card puts keyboard focus back where it was. Home Assistant's switch threw when asked for focus before it had drawn itself, the redraw failed, and no switch worked until a reload. This was found in the browser, not by a test.
 - **A skipped part of the form was drawn as the word "false".** Found in a screenshot.
+
+### Final review of Phase 4
+
+One fresh reviewer read the whole change on 2026-11-13, from the design's commit to 633b145 (document the new form and move to version 0.4.0). It ran every test suite, used the card in a browser in the throwaway Home Assistant as the normal account at 1280 and 360 pixels wide, wrote its own probes, and broke the card 32 ways on purpose to see which tests noticed. Its verdict: ready for the owner's trial, with no Critical or Important findings and seven Minor ones.
+
+The builder graded the findings again by what a person would meet, and fixed these. Each has a test that failed first, or was shown to fail when the code was broken on purpose.
+
+- **A control that failed to draw could leave the card stuck busy.** The focus bug above was one case of this. Now no drawing failure can stop a change being sent or leave the card busy. The failure is written to the browser's console.
+- **The form could say "This item changed" when it hadn't.** A number typed outside a slider's limits was moved to the limit when any new view arrived. Now a value is only moved when the setting itself changed.
+- **Start values could be wrong on unusual thermostats.** A step of 0.1 gave 78.30000000000001. A range only two steps wide started "heat to" and "cool to" on the same number. A step larger than the range gave a start above the highest setting. All three now give start values inside the limits, with "heat to" below "cool to".
+- **Tests were missing for four things that worked:** the card's own clock dropdown, a step's switch, the before or after choice, and choosing a second item. Each new test was shown to fail when the code was broken.
+- **The note about the throwaway Home Assistant was wrong.** It listens on every address inside WSL, not only on this computer. The note now says so.
+
+**Checked and found fine by the reviewer:** both anti-goals in about 15 sequences through the form's logic and 9 probes of the element, including a copy of the card with Home Assistant's controls hidden from it; a step holding 68.3 opened and saved untouched; the normal account's Save; Enter in both number boxes; Escape closing the picker before the dialog; the server offering the same actions and settings as 0.3.0; no `innerHTML`, no red, no clock times.
+
+**Found and not fixed.** None is filed as an issue. The owner confirms each one first.
+
+- A view that arrives in the few milliseconds while the form waits for Home Assistant's controls is not applied to the form, and the form doesn't say that something changed. What is sent still matches what is shown.
+- A thermostat that reports only one limit, or a limit as text, gets Home Assistant's default limits for both. Version 0.3.0 checked the one it had.
+- A range step sent with one temperature missing and the other out of range is refused as "not written correctly". In 0.3.0 the sentence named the range.
+- A saved range step with no "heat to" would stop the card from drawing. Only a hand-edited file can hold one.
+- Tests don't notice if the card's own switch moves on the tap, if Cancel does nothing, or if the switches stay usable while a change is being sent.
+- The form's stand-in elements differ from the real ones: the stand-in dialog reports closing at once, and the real picker reports a choice three times.
+- The sliders, the minutes box and the before or after dropdown have no names for a screen reader. The 0.3.0 form named its boxes.
+- A browser tab still running the 0.3.0 card after the server updates keeps a working card, but its form is refused until the page is reloaded.
+- Pressing Escape while a save is being refused loses the refusal sentence, as in 0.3.0.
+- If someone else changes the step being edited, the form keeps its own values, Save overwrites theirs, and nothing says so.
+- A script that loses its label while its form is open can't be retimed until the form is reopened.
+- A failed load of Home Assistant's controls is remembered until the page is reloaded.
+- Nobody has seen the too-early registration happen again in a browser, so the fix for it is tested only with stand-ins.
 
 ### Card text added or changed in Phase 4, for the owner to check
 

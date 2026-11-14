@@ -325,6 +325,64 @@ test("a tap still sends the change when the switch drawn after it can't take foc
   assert.notEqual(byKey(card, "routine").disabled, true, "the card is not left busy");
 });
 
+test("a control that throws while the card redraws doesn't stop a tap being sent or leave the card busy", async () => {
+  const { card, connection } = await mount(await freshCard(ALL_CONTROLS));
+  const createElement = document.createElement;
+  const reported = [];
+  const consoleError = console.error;
+  console.error = (...words) => reported.push(words);
+  let broke = false;
+  document.createElement = (tag) => {
+    if (tag === "ha-switch" && !broke) {
+      broke = true;
+      throw new Error("this control broke");
+    }
+    return createElement(tag);
+  };
+
+  byKey(card, "routine").fire("change");
+  await settle();
+  document.createElement = createElement;
+  console.error = consoleError;
+
+  assert.deepEqual(connection.sent, [{ type: "morning_routine/update", is_on: false, entry_id: "demo" }]);
+  assert.equal(reported.length, 1, "the failure is reported in the browser's console");
+  byKey(card, "skip").fire("change");
+  await settle();
+  assert.equal(connection.sent.length, 2, "the card is not left busy");
+});
+
+// Review Focus 1.
+test("the card's own clock dropdown sends the change", async () => {
+  const view = viewOf({ clock_options: [{ package: "com.example.clock", name: "Example Clock" }, { package: "com.other.clock", name: "Other Clock" }] });
+  const { card, connection } = await mount(await freshCard(), view);
+
+  const clock = byKey(card, "clock");
+  assert.equal(clock.localName, "select");
+  clock.value = "com.other.clock";
+  clock.fire("change");
+  await settle();
+
+  assert.deepEqual(connection.sent, [{ type: "morning_routine/update", clock: "com.other.clock", entry_id: "demo" }]);
+});
+
+// Review Focus 1.
+test("a step's switch sends the step turned off, with the card's own switch and with Home Assistant's", async () => {
+  const off = [{ id: "h1", item: "climate.hall", offset_minutes: -20, enabled: false, action: "set_temperature", heat_to: 68.3, cool_to: 74 }];
+
+  const own = await mount(await freshCard(), viewOf({ steps: [HALL_STEP] }));
+  assert.equal(byKey(own.card, "step:h1").localName, "input");
+  byKey(own.card, "step:h1").fire("click");
+  await settle();
+  assert.deepEqual(own.connection.sent, [{ type: "morning_routine/set_steps", steps: off, entry_id: "demo" }]);
+
+  const theirs = await mount(await freshCard(ALL_CONTROLS), viewOf({ steps: [HALL_STEP] }));
+  assert.equal(byKey(theirs.card, "step:h1").localName, "ha-switch");
+  byKey(theirs.card, "step:h1").fire("change");
+  await settle();
+  assert.deepEqual(theirs.connection.sent, [{ type: "morning_routine/set_steps", steps: off, entry_id: "demo" }]);
+});
+
 test("the clock dropdown is Home Assistant's once its controls have loaded, and a choice sends the change", async () => {
   const view = viewOf({ clock_options: [{ package: "com.example.clock", name: "Example Clock" }, { package: "com.other.clock", name: "Other Clock" }] });
   const { card, connection } = await mount(await freshCard(ALL_CONTROLS), view);
@@ -489,6 +547,18 @@ test("retiming a saved step sends its settings back unchanged", async () => {
   assert.deepEqual(connection.sent[0].steps, [
     { id: "h1", item: "climate.hall", offset_minutes: -45, action: "set_temperature", heat_to: 68.3, cool_to: 74, enabled: true },
   ]);
+});
+
+test("a step set to after the alarm is sent as minutes after", async () => {
+  const { card, connection } = await mount(await freshCard(ALL_CONTROLS));
+  await openForm(card);
+  choose(card, "light.lamp");
+
+  settingSlider(card, "minutes").fire("value-changed", { value: 10 });
+  settingSlider(card, "direction").fire("value-changed", { value: "after" });
+  await save(card);
+
+  assert.equal(connection.sent[0].steps[0].offset_minutes, 10);
 });
 
 test("the minutes are checked before anything is sent", async () => {

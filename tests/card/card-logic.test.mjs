@@ -409,6 +409,13 @@ test("choosing an item takes its first action, with nothing ticked", () => {
   assert.deepEqual(formStep(state, LAMP), { item: "light.lamp", action: "turn_on" });
 });
 
+test("choosing another item keeps nothing from the one before", () => {
+  const lamp = withValue(withChecked(withItem(NEW_FORM, LAMP), BRIGHTNESS, true), "brightness", 40);
+  const state = withItem(lamp, HEATER);
+  assert.deepEqual(state.values, { temperature: 106 });
+  assert.deepEqual(state.checked, { temperature: false });
+});
+
 test("choosing nothing clears the choice", () => {
   const state = withItem(withItem(NEW_FORM, LAMP), null);
   assert.deepEqual(state, NEW_FORM);
@@ -453,6 +460,12 @@ test("a value is sent as held, never rounded to the slider's step", () => {
 test("refreshed with nothing different changes nothing and says nothing", () => {
   const view = viewOf([], [LAMP]);
   const state = withValue(withChecked(withItem(NEW_FORM, LAMP), BRIGHTNESS, true), "brightness", 40);
+  assert.deepEqual(refreshed(state, view, viewOf([], [LAMP])), { state, note: null });
+});
+
+test("refreshed leaves a typed value outside the limits alone when the limits didn't change", () => {
+  const view = viewOf([], [LAMP]);
+  const state = withValue(withChecked(withItem(NEW_FORM, LAMP), BRIGHTNESS, true), "brightness", 250);
   assert.deepEqual(refreshed(state, view, viewOf([], [LAMP])), { state, note: null });
 });
 

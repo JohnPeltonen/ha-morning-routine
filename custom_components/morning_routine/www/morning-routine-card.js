@@ -223,12 +223,14 @@ export function refreshed(state, before, view) {
       if (setting.optional) checked[setting.key] = false;
       continue;
     }
+    // A value is only moved when the setting itself changed. A number the person typed outside
+    // unchanged limits is theirs to fix: the server refuses it with a sentence.
+    if (JSON.stringify(was.selector) === JSON.stringify(setting.selector)) continue;
+    if (drawn(setting)) changed = true;
     if (isNumber(value) && !inside(setting, value)) {
       const limits = setting.selector.number;
       values[setting.key] = Math.min(Math.max(value, limits.min), limits.max);
-      if (drawn(setting)) changed = true;
     }
-    if (drawn(setting) && JSON.stringify(was.selector) !== JSON.stringify(setting.selector)) changed = true;
   }
   if (!changed && JSON.stringify(values) === JSON.stringify(state.values)) return { state, note: null };
   return { state: { ...state, values, checked }, note: changed ? "item_changed" : null };
@@ -627,11 +629,21 @@ if (globalThis.customElements) {
       }, RETRY_MS);
     }
 
+    // Draws the card around a change being sent. One of Home Assistant's controls failing to draw
+    // must not stop the change being sent, or leave the card busy and deaf to every later tap.
+    _redraw() {
+      try {
+        this._render();
+      } catch (error) {
+        console.error("Morning Routine card: drawing failed", error);
+      }
+    }
+
     async _send(message, onRefused) {
       if (this._busy || !this._view) return false;
       this._busy = true;
       this._refused = null;
-      this._render();
+      this._redraw();
       let saved = true;
       try {
         await this._hass.connection.sendMessagePromise({ ...message, entry_id: this._view.entry_id });
@@ -642,7 +654,7 @@ if (globalThis.customElements) {
         else this._refused = text;
       }
       this._busy = false;
-      this._render();
+      this._redraw();
       return saved;
     }
 

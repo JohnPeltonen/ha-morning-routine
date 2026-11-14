@@ -3,8 +3,11 @@
     /root/mr/.venv/bin/python tests/try/set_up.py
 
 Afterwards there are two accounts, a made-up phone, one routine, and two dashboards with the card:
-http://localhost:8123/try-card and http://localhost:8123/try-card-alone. The password is fixed,
-because the instance only listens on this computer and holds nothing real.
+http://localhost:8123/try-card and http://localhost:8123/try-card-alone.
+
+The password is fixed and public, because the instance holds nothing real. Home Assistant listens
+on every address inside WSL. With WSL's usual networking only this computer can reach it. Don't
+run it where WSL shares the computer's network address, and stop it when you're done.
 """
 
 import asyncio
