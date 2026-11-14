@@ -15,7 +15,7 @@ from custom_components.morning_routine.const import (
     MAX_OFFSET_MINUTES,
     MIN_OFFSET_MINUTES,
 )
-from custom_components.morning_routine.devices import device_info
+from custom_components.morning_routine.devices import describe_device
 from custom_components.morning_routine.routine import item_is_allowed
 from custom_components.morning_routine.rules import STEP_SETTINGS, Step
 
@@ -142,36 +142,31 @@ def _device_fields(
 
 
 def _check_device(hass: HomeAssistant, name: str, action: str, settings: dict[str, Any], number: str) -> None:
-    info = device_info(hass, name)
-    if info is None:
+    """Check a step against what the device says it can do, the same description the form draws."""
+    actions = describe_device(hass, name)
+    if actions is None:
         raise refuse("item_not_allowed", item=name)
-    if action not in info["actions"]:
+    offered = next((entry["settings"] for entry in actions if entry["action"] == action), None)
+    if offered is None:
         raise refuse("action_not_offered", item=name)
-    allowed: set[str] = set()
-    if action == "turn_on" and info.get("brightness"):
-        allowed = {"brightness"}
-    elif action == "turn_on" and info.get("temperature"):
-        allowed = {"temperature"}
-    elif action == "set_temperature":
-        allowed = {"heat_to", "cool_to"}
-    if any(value is not None and key not in allowed for key, value in settings.items()):
+    limits = {setting["key"]: setting["selector"]["number"] for setting in offered}
+    if any(value is not None and key not in limits for key, value in settings.items()):
         raise refuse("invalid_step", number=number)
-    brightness = settings["brightness"]
-    if brightness is not None and (type(brightness) is not int or not 1 <= brightness <= 100):
-        raise refuse("brightness_out_of_range")
-    low, high = info.get("min_temp"), info.get("max_temp")
-    for key in ("temperature", "heat_to", "cool_to"):
+    if any(not setting["optional"] and settings[setting["key"]] is None for setting in offered):
+        raise refuse("invalid_step", number=number)
+    for key, limit in limits.items():
         value = settings[key]
         if value is None:
             continue
-        if (low is not None and value < low) or (high is not None and value > high):
-            raise refuse("temperature_out_of_range", item=name, low=_plain(low), high=_plain(high))
-    if action == "set_temperature":
-        if settings["heat_to"] is None or settings["cool_to"] is None:
-            raise refuse("invalid_step", number=number)
-        if settings["heat_to"] >= settings["cool_to"]:
-            raise refuse("heat_not_below_cool")
+        inside = limit["min"] <= value <= limit["max"]
+        if key == "brightness":
+            if type(value) is not int or not inside:
+                raise refuse("brightness_out_of_range")
+        elif not inside:
+            raise refuse("temperature_out_of_range", item=name, low=_plain(limit["min"]), high=_plain(limit["max"]))
+    if action == "set_temperature" and settings["heat_to"] >= settings["cool_to"]:
+        raise refuse("heat_not_below_cool")
 
 
-def _plain(number: float | None) -> str:
-    return "" if number is None else f"{number:g}"
+def _plain(number: float) -> str:
+    return f"{number:g}"

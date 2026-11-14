@@ -5,6 +5,7 @@ from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import CLIENT_ID
 
 from custom_components.morning_routine.const import DOMAIN
+from custom_components.morning_routine.devices import describe_device
 from custom_components.morning_routine.rules import Step
 
 
@@ -269,3 +270,52 @@ async def test_one_of_two_like_steps_sent_alone_without_an_id_keeps_its_own_id(h
     await set_steps(hass, loaded.entry_id, [bright])
 
     assert [step.id for step in loaded.runtime_data.steps] == [bright_id]
+
+
+@pytest.mark.parametrize("item", ["light.lamp", "light.plain", "climate.heater", "climate.hall"])
+async def test_the_description_and_the_checks_agree(hass, loaded, lamp, heater, hall, item):
+    """Whatever the form is told it may offer, the checks accept. Anything else, they refuse."""
+    hass.states.async_set("light.plain", "off", {"supported_color_modes": ["onoff"]})
+    out_of_range = ("brightness_out_of_range", "temperature_out_of_range")
+
+    for action in describe_device(hass, item):
+        base = {"item": item, "offset_minutes": 0, "action": action["action"]}
+        limits = {setting["key"]: setting["selector"]["number"] for setting in action["settings"]}
+        starts = {setting["key"]: setting["start"] for setting in action["settings"]}
+        required = {setting["key"]: setting["start"] for setting in action["settings"] if not setting["optional"]}
+
+        # A new step can be saved without moving a slider, and an optional setting can be left out.
+        await set_steps(hass, loaded.entry_id, [{**base, **starts}])
+        await set_steps(hass, loaded.entry_id, [{**base, **required}])
+
+        if action["action"] == "set_temperature":
+            ends = [{"heat_to": limits["heat_to"]["min"], "cool_to": limits["cool_to"]["max"]}]
+        else:
+            ends = [{key: limit[end]} for key, limit in limits.items() for end in ("min", "max")]
+        for settings in ends:
+            await set_steps(hass, loaded.entry_id, [{**base, **settings}])
+
+        for key, limit in limits.items():
+            for outside in (limit["min"] - 1, limit["max"] + 1):
+                assert await refused(hass, loaded.entry_id, [{**base, **starts, key: outside}]) in out_of_range
+
+        for key in ("brightness", "temperature", "heat_to", "cool_to"):
+            if key not in limits:
+                assert await refused(hass, loaded.entry_id, [{**base, **starts, key: 50}]) == "invalid_step"
+
+
+async def test_a_value_between_slider_steps_is_accepted(hass, loaded, hall):
+    await set_steps(
+        hass, loaded.entry_id, [{"item": hall, "offset_minutes": 0, "action": "set_temperature", "heat_to": 68.3, "cool_to": 74}]
+    )
+
+    assert loaded.runtime_data.steps[0].heat_to == 68.3
+
+
+async def test_a_thermostat_with_no_limits_is_checked_against_the_defaults(hass, loaded):
+    hass.states.async_set("climate.bare", "off", {"supported_features": 1 + 128 + 256})
+    step = {"item": "climate.bare", "offset_minutes": 0, "action": "turn_on"}
+
+    await set_steps(hass, loaded.entry_id, [{**step, "temperature": 35}])
+
+    assert await refused(hass, loaded.entry_id, [{**step, "temperature": 36}]) == "temperature_out_of_range"
