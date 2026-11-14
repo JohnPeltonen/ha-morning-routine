@@ -123,6 +123,8 @@ async function freshCard(tags = []) {
   return registry;
 }
 const ALL_CONTROLS = [...CONTROL_TAGS, ...SELECTOR_TAGS];
+// Home Assistant 2026.11 removed ha-formfield. Its checkbox shows its own label.
+const NEWER_CONTROLS = ALL_CONTROLS.filter((tag) => tag !== "ha-formfield");
 
 const slider = (min, max, unit) => ({ number: { min, max, step: 1, mode: "slider", unit_of_measurement: unit } });
 const BRIGHTNESS = { key: "brightness", name: "Brightness", optional: true, hint: "as it was", start: 100, selector: slider(1, 100, "%") };
@@ -465,6 +467,33 @@ test("adding a light step with a brightness sends it", async () => {
     },
   ]);
   assert.equal(dialogOf(card).open, false);
+});
+
+test("on a Home Assistant with no ha-formfield the form still loads, and the checkbox carries its own label", async () => {
+  const { card, connection } = await mount(await freshCard(NEWER_CONTROLS));
+  await openForm(card);
+  assert.doesNotMatch(dialogOf(card).text, /couldn't load/);
+
+  choose(card, "light.lamp");
+  const box = inForm(card, (element) => element.localName === "ha-checkbox")[0];
+  assert.equal(box.text, "Brightness");
+  assert.deepEqual(inForm(card, (element) => element.localName === "ha-formfield"), []);
+  tick(card);
+  settingSlider(card, "brightness").fire("value-changed", { value: 40 });
+  await save(card);
+
+  assert.equal(connection.sent[0].steps[0].brightness, 40);
+});
+
+test("on a Home Assistant with ha-formfield the checkbox sits inside it, and the label shows once", async () => {
+  const { card } = await mount(await freshCard(ALL_CONTROLS));
+  await openForm(card);
+
+  choose(card, "light.lamp");
+  const box = inForm(card, (element) => element.localName === "ha-checkbox")[0];
+  assert.equal(box.parent.localName, "ha-formfield");
+  assert.equal(box.parent.label, "Brightness");
+  assert.equal(box.text, "");
 });
 
 test("a light step with Brightness unticked sends no brightness, and shows what that means", async () => {

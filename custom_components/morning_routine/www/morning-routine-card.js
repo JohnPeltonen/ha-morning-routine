@@ -316,7 +316,8 @@ if (globalThis.customElements) {
 
   // Home Assistant's own controls. It doesn't promise them to custom cards, so the card checks
   // for each one and never relies on one it hasn't seen.
-  const CONTROL_TAGS = ["ha-selector", "ha-switch", "ha-checkbox", "ha-formfield", "ha-button"];
+  // ha-formfield isn't in this list. Home Assistant 2026.11 removed it.
+  const CONTROL_TAGS = ["ha-selector", "ha-switch", "ha-checkbox", "ha-button"];
   // ha-selector loads the element for a type of selector the first time it draws one.
   const SELECTOR_TYPES = {
     "ha-selector-entity": { entity: { include_entities: [] } },
@@ -367,7 +368,7 @@ if (globalThis.customElements) {
     dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
     dialog .title { font-size: 22px; font-weight: 400; }
     .locked-name { font-size: 16px; }
-    .check-row { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+    .check-row { display: flex; align-items: center; gap: 4px; margin-top: 8px; min-height: 40px; }
     .check-row .note { margin: 0; }
     .when-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
     .when-row ha-selector { flex: 1 1 110px; min-width: 0; }
@@ -1046,19 +1047,26 @@ if (globalThis.customElements) {
           continue;
         }
         const ticked = state.checked[setting.key] === true;
-        const box = h("ha-checkbox", {
-          checked: ticked,
-          onchange: (event) => {
-            form.state = withChecked(form.state, setting, event.target.checked === true);
-            this._drawSettings();
-            this._syncFormButtons();
+        // Before Home Assistant 2026.11 a checkbox had no label of its own and sat inside
+        // ha-formfield. From 2026.11 there is no ha-formfield, and the checkbox shows its own text.
+        const wrapped = Boolean(customElements.get("ha-formfield"));
+        const box = h(
+          "ha-checkbox",
+          {
+            checked: ticked,
+            onchange: (event) => {
+              form.state = withChecked(form.state, setting, event.target.checked === true);
+              this._drawSettings();
+              this._syncFormButtons();
+            },
           },
-        });
+          !wrapped && setting.name,
+        );
         rows.push(
           h(
             "div",
             { class: "check-row" },
-            h("ha-formfield", { label: setting.name }, box),
+            wrapped ? h("ha-formfield", { label: setting.name }, box) : box,
             // What leaving the setting out means, such as "as it was".
             !ticked && h("span", { class: "note" }, setting.hint),
           ),

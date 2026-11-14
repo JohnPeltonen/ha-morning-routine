@@ -2,9 +2,38 @@
 
 Last updated 2026-11-13.
 
-## Version 0.4.1: the card asks for a reload after an update
+## Version 0.4.1: two fixes after the owner's first try of 0.4.0
 
-Version 0.4.1 is committed on the owner's desktop. It is not pushed and not on any server.
+Version 0.4.1 is committed on the owner's desktop. It is not pushed and not on any server. It holds two fixes: the form now loads on Home Assistant 2026.11, and the card asks for a reload after an update.
+
+### The form didn't load on Home Assistant 2026.11
+
+**What happened.** On 2026-11-13 the owner opened the 0.4.0 form on a server running Home Assistant 2026.11.1. It showed "This form couldn't load Home Assistant's controls. Reload the page to try again." Version 0.4.0 had only been tried on 2026.10.0.
+
+**Cause.** The card waited for five of Home Assistant's controls before drawing the form. One of them, `ha-formfield` (the wrapper that gives a checkbox its label), no longer exists in 2026.11. The 2026.11 frontend package has no file that defines it. The card waited 5 seconds for it and gave up. In 2026.11 the checkbox is a different element with the same name, and it shows its own text as its label.
+
+**Fix.** The card no longer waits for `ha-formfield`. When it exists, the checkbox sits inside it, as before. When it doesn't, the checkbox carries the setting's name as its own text.
+
+**Tried in a browser on both versions**, at 360 pixels wide:
+
+| | 2026.10.0 | 2026.11.1 |
+|---|---|---|
+| The form loads Home Assistant's controls | yes | yes, on 12 page loads, 4 of them with nothing saved in the browser |
+| The picker lists the items, and a click chooses one | yes | yes |
+| A light with a ticked Brightness saves | yes | yes |
+| A thermostat with a heat and a cool temperature saves | not tried again | yes |
+| Editing a step, a step's switch, Skip next alarm, Remove step | not tried again | yes |
+| The routine switch and Home Assistant's clock dropdown | not tried again | yes |
+| The account that isn't an admin, in the dark theme | not tried again | yes |
+
+**Decision: the card tells the two versions apart by whether `ha-formfield` exists.** Cost if wrong: on a 2026.10 page where the checkbox is defined and `ha-formfield` is not, the checkbox would show with no name. That was not seen on either dashboard or account when 2026.10.0 was tried.
+
+**Found and not fixed.**
+
+- The Home Assistant tests and the tests in GitHub run against 2026.10.0 only. Nothing automatic notices a change like this one in a newer Home Assistant. The second throwaway Home Assistant, described in `CLAUDE.md`, is the only check on 2026.11.
+- On 2026.11 the checkbox is 20 pixels tall. On 2026.10 it was 40.
+
+### The card asks for a reload after an update
 
 **What happened.** On 2026-11-13 the owner updated the server from 0.3.0 to 0.4.0. The browser kept running the 0.3.0 card, and its form showed each action as "[object Object]". Version 0.4.0 sends each action as a record with a name and settings. The 0.3.0 card expected a word and printed the record as text. The server was right: it ran 0.4.0 and served the 0.4.0 card file.
 

@@ -62,6 +62,15 @@ wsl -d Ubuntu -- bash /mnt/d/code/ha-morning-routine/tests/try/start.sh
 wsl -d Ubuntu -- bash -c 'cd /mnt/d/code/ha-morning-routine && /root/mr/.venv/bin/python tests/try/set_up.py'
 ```
 
+The owner's server runs a newer Home Assistant than the oldest supported one, and its controls differ. On the owner's desktop a second environment has Home Assistant 2026.11.1, with its own settings folder. Stop the first before starting it, because both use port 8123. Run `set_up.py` with its own Python the first time:
+
+```bash
+wsl -d Ubuntu -- env TRY_VENV=/root/mr-2026-11/.venv TRY_CONFIG=/root/mr-try-11 bash /mnt/d/code/ha-morning-routine/tests/try/start.sh
+wsl -d Ubuntu -- bash -c 'cd /mnt/d/code/ha-morning-routine && /root/mr-2026-11/.venv/bin/python tests/try/set_up.py'
+```
+
+Try a change to the card on both versions.
+
 Then open `http://localhost:8123/try-card`. The accounts are `tester` (admin) and `member` (not an admin), and the password is in `tests/try/set_up.py`. Restart it after changing any Python file. Stop it when you're done: `wsl -d Ubuntu -- pkill -x hass`. To start over, stop it and delete `/root/mr-try`.
 
 ## Conventions
