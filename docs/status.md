@@ -12,6 +12,26 @@ The plan is [2026-11-13-phase-4-card-uses-home-assistant-controls.md](superpower
 
 **The owner's answer to the design's open question, 2026-11-13:** the owner tries the card on the owner's own server and dashboard. The plan adds two things, because the desktop has WSL: the Home Assistant tests run in WSL, and the builder's own browser checks use a throwaway Home Assistant 2026.10.0 in WSL. The owner's server is only touched after the build, with the owner present.
 
+### The riskiest assumption held: the card can use Home Assistant's controls
+
+Checked on 2026-11-13 in a throwaway Home Assistant 2026.10.0 (frontend 20260930.2) in WSL, in a browser 360 pixels wide, as an admin account and as a normal account. How to start it is in `CLAUDE.md`.
+
+| Check | Admin | Normal account |
+|---|---|---|
+| `ha-selector`, `ha-switch`, `ha-checkbox`, `ha-formfield` and `ha-button` are defined on a dashboard holding only this card | yes | yes |
+| `ha-selector` draws the entity picker limited to a given list | yes | yes |
+| It draws toggle buttons, a slider with a number box, a plain number box and a dropdown | yes | yes |
+| Each fires `value-changed` with the new value | yes | yes (picker and dropdown tried) |
+| A slider with step 1 given 68.3 shows 68.3 and fires nothing by itself | yes | not repeated |
+| Inside the card's own dialog, the picker's list and the dropdown's list open above it and an item can be chosen | yes | yes |
+| `ha-switch` moves when set from code, fires `change` on a tap, can be put back in the handler, and ignores taps when disabled | yes | not repeated |
+
+Other things the proof showed are listed in the plan under "Amendments". The two that changed the build most: a control keeps showing the value it was last given, so the card writes every change back to it; and emptying a number box reports no value, so Save is off until the box holds a number.
+
+No loading recipe was needed on 2026.10.0. The controls were already defined for both accounts. The card still tries the known recipe when one is missing, and that path has not been seen working, because nothing was missing.
+
+**Found while proving it:** on one first page load after logging in, the card registered itself before Home Assistant swapped in its own element registry, and the dashboard showed "Configuration error" in place of the card until the page was reloaded. Four reloads afterwards were fine. This is in version 0.3.0 too. Phase 4 fixes it.
+
 **Version 0.3.0 is on the owner's server.** Read from the server on 2026-11-13: the integration reports 0.3.0 and the routine is loaded. The Phase 3 section below was written before that.
 
 **Decided by the owner, from mockups:**

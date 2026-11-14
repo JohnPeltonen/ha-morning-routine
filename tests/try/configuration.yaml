@@ -1,0 +1,21 @@
+# A throwaway Home Assistant for trying the card in a browser. Every device here is made up.
+# tests/try/start.sh copies this file into the instance's settings folder.
+homeassistant:
+  name: Try-out
+  unit_system: us_customary
+  time_zone: America/Chicago
+
+frontend:
+config:
+mobile_app:
+demo:
+
+script:
+  good_morning:
+    alias: Good morning
+    sequence: []
+  open_the_blinds:
+    alias: Open the blinds
+    sequence: []
+
+automation: []

@@ -49,6 +49,54 @@ Nothing is pushed in this plan. The owner's server is not touched in this plan.
 
 Tests that pin these are in Tasks 1, 5, 6 and 7, each marked "Review Focus".
 
+## Amendments, 2026-11-13
+
+These came from the second agent's review of this plan and from Task 1's proof. Where they differ from a task's text below, these win.
+
+**What Task 1 proved on Home Assistant 2026.10.0 (frontend 20260930.2), for the admin and the normal account:**
+- `ha-selector`, `ha-switch`, `ha-checkbox`, `ha-formfield` and `ha-button` are already defined on a dashboard page that holds only this card. No loading recipe was needed. `loadControls` still runs the recipe when one of them is missing.
+- `ha-selector` loads the inner element for a selector type the first time that type is drawn (`ha-selector-entity`, `ha-selector-number`, `ha-selector-select`, `ha-selector-button_toggle`). It took 6 to 17 milliseconds.
+- A control must sit inside Home Assistant's page. The entity picker drew nothing in an element added outside it.
+- A control shows the `value` it was last given. If the card doesn't write a new value back, the control keeps showing the old one and stays silent when the person returns to it.
+- Emptying a number box fires `value-changed` with no value. A number typed outside the limits is passed on as typed (200 on a 45 to 95 slider).
+- A slider fires `value-changed` when it is released, not while it is dragged. A slider with step 1 given 68.3 shows 68.3 and fires nothing by itself.
+- `ha-switch`: setting `checked` back inside the `change` handler holds, `disabled` blocks a tap, and setting `checked` from code fires nothing.
+- At 360 pixels wide the entity picker opens as a sheet above the card's dialog, with a search box, and the dropdown's list opens above the dialog. Enter in a number box doesn't close the dialog.
+- The picker has no clear button.
+- Found: on one first page load the card registered before Home Assistant swapped in its own element registry, and the dashboard showed "Configuration error" until a reload. Fixed in Task 6.
+
+**Task 2:**
+- An optional setting also carries `"hint"`: "as it was" for brightness and "last setting" for a temperature. These are the hints the 0.3.0 form shows.
+- The test `hass` is metric. Tests that pin Fahrenheit values set `hass.config.units` to the US system first. `test_celsius_uses_half_degree_steps` expects range starts 61.5 and 78.5 for 45 to 95.
+- `tests/ha/test_devices.py` stops importing `device_info` in this task. "A thermostat offers only the actions it supports" and "a thermostat that can do neither is not offered" stay, pointed at `describe_device`.
+- Check the default step (1 in Fahrenheit, 0.5 in Celsius) against the thermostat control in the installed frontend, and record the result.
+
+**Task 4:** every test in `tests/ha/test_view.py` that names `type` or `temperature_unit` changes, including `test_view_of_a_new_routine`, `test_view_lists_steps_and_labeled_items_by_name`, `test_view_names_an_item_without_a_state_from_the_registry` and `test_view_keeps_an_unavailable_device_step_available`.
+
+**Task 5:**
+- `formItems(view, editingId)` no longer adds a stand-in entry for an item that is gone. `startForm` and `refreshed` look the chosen item up in `formItems(view, state.editing)`, so a script another step took while it was chosen counts as no longer offered.
+- `withItem(state, entry)` with no entry clears the choice.
+- `withValue` stores `null` when the value isn't a finite number. `formStep` returns null while a drawn setting holds no number, so Save is off.
+- `refreshed` moves every held value into the new limits, drawn or not. The note is given only when something drawn changed: the action, the list of settings, a drawn value, or a drawn setting's selector.
+- A `locked` state holds the saved step's settings in `values`. `formStep` ignores `entry` for it. `refreshed` reads the saved step again.
+- The state holds nothing about the time. The form's When row is drawn once and never redrawn.
+- `_stepRow` reads `step.detail` in this task, because `stepDetail` is removed here.
+- Added test: `refreshed` when another step takes the chosen script gives `"choice_gone"`.
+
+**Task 6:**
+- `loadControls(holder)` also draws one hidden `ha-selector` of each type the card uses inside `holder` (an element in the card's shadow root), and waits for the four inner elements. It resolves true only when all nine tags are defined.
+- The clock dropdown is Home Assistant's only when `ha-selector-select` is defined. The "Choose a clock" entry and the check that ignores an empty choice stay.
+- The card registers itself again once `home-assistant` is defined, if the registry in place then doesn't know it. Test first: `the card registers again when Home Assistant swaps the element registry`.
+- Tests get a fresh copy of the card by importing the file with a different query string, so one test file can have a loader that fails, hangs or succeeds.
+- Added browser step: in the throwaway Home Assistant, as `tester` and as `member`, tap the routine switch, the skip switch and a step's switch, and change the clock.
+
+**Task 7:**
+- Kept from 0.3.0: the form closes when someone else removes the step being edited; the note about the label when no labelled item is offered; the labels "What should happen", "What to do" and "When"; an unticked optional setting shows its hint.
+- Every `value-changed` writes the new value back to its control.
+- A locked step shows its name, its detail line and the sentence.
+- Save is `ha-button` as it comes, and Cancel is `ha-button` with `appearance="plain"`.
+- A number typed outside a slider's limits is sent as typed. The server refuses it and the form shows the server's sentence.
+
 ---
 
 ### Task 1: A throwaway Home Assistant, and proof that the controls load

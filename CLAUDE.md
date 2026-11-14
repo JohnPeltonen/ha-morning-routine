@@ -42,7 +42,27 @@ gh run list --repo JohnPeltonen/ha-morning-routine --limit 5
 gh run view <id> --log-failed
 ```
 
-On Linux or WSL with Python 3.14, `pip install -r requirements_test_ha.txt` then `pytest tests/ha -v` runs them the way CI does. A WSL copy was used this way during Phase 1.
+On Linux or WSL with Python 3.14, `pip install -r requirements_test_ha.txt` then `pytest tests/ha -v` runs them the way CI does. On the owner's desktop, WSL Ubuntu has that environment at `/root/mr/.venv`, and the tests run straight from the Windows folder:
+
+```bash
+wsl -d Ubuntu -- bash -c 'cd /mnt/d/code/ha-morning-routine && /root/mr/.venv/bin/python -m pytest tests/ha -q -p no:cacheprovider'
+```
+
+Card tests, with Node 24:
+
+```bash
+node --test "tests/card/*.test.mjs"
+```
+
+A throwaway Home Assistant for trying the card in a browser. It is the oldest supported version, uses made-up devices from the `demo` integration, and listens on `http://localhost:8123`. Its settings folder is `/root/mr-try` in WSL, outside the repo:
+
+```bash
+wsl -d Ubuntu -- bash /mnt/d/code/ha-morning-routine/tests/try/start.sh
+# The first time only, once it has started:
+wsl -d Ubuntu -- bash -c 'cd /mnt/d/code/ha-morning-routine && /root/mr/.venv/bin/python tests/try/set_up.py'
+```
+
+Then open `http://localhost:8123/try-card`. The accounts are `tester` (admin) and `member` (not an admin), and the password is in `tests/try/set_up.py`. Restart it after changing any Python file. To start over, stop it and delete `/root/mr-try`.
 
 ## Conventions
 
