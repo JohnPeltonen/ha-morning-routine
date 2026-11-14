@@ -6,7 +6,7 @@ Date: 2026-11-12. Status: draft. A fresh reviewer read it as a builder on 2026-1
 
 ## Why
 
-The add-a-step form works, but it doesn't look like Home Assistant. Brightness and temperatures are typed into plain text boxes. The item picker is the browser's own list with a search box above it. The owner wants the form, and the card around it, to look and feel like the rest of Home Assistant.
+The add-a-step form works, but it doesn't look like Home Assistant. Brightness and temperatures are typed into plain text boxes. The item picker is the browser's own list with a search box above it. The owner wants the   form, and the card around it, to look and feel like the rest of Home Assistant.
 
 The owner's priority, in order:
 
